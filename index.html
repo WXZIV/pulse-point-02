@@ -1,49 +1,77 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover" />
-  <title>Pulse Point (Embedded)</title>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
   <style>
-    /* Base layout from original */
-    html, body {
-      height: auto;
-      margin: 0;
-      padding: 0;
-      background: linear-gradient(135deg, #1A2A44 0%, #0D1B2A 100%);
+    /* ---------- Base layout ---------- */
+    html, body { height: auto; } /* Adjusted for full scrolling */
+    body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      min-height: 100vh;
-      overflow: auto;
-      color: #ECF0F1;
-      font-size: clamp(14px, 2vw, 16px);
-      line-height: 1.6;
+      margin: 0; padding: 0;
+      background: linear-gradient(135deg, #1A2A44 0%, #0D1B2A 100%);
+      min-height: 100vh; overflow: auto; color: #ECF0F1;
+      font-size: clamp(14px, 2vw, 16px); line-height: 1.6;
       display: block;
       transition: all 0.3s ease;
       -webkit-overflow-scrolling: touch;
       scroll-behavior: smooth;
     }
-    /* Frame wrapper to ensure the iframe takes full height and width */
-    .frame-wrap {
-      display: flex;
-      height: 100vh;
-      width: 100%;
-      align-items: stretch;
-      justify-content: center;
+
+    /* === AUTH GUARD: hide the entire app UI until body has .auth === */
+    body:not(.auth) #navbar,
+    body:not(.auth) #top-menu,
+    body:not(.auth) #sidebar,
+    body:not(.auth) #content,
+    body:not(.auth) #chartModal,
+    body:not(.auth) #chartBackdrop,
+    body:not(.auth) .modal,
+    body:not(.auth) .loading-overlay {
+      display: none !important;
     }
-    /* Iframe styling from original adjustments */
-    iframe {
-      flex: 1;
-      border: none;
-      height: 100%;
+
+    /* Everything in the app is inside this wrapper so we can rotate it on phones */
+    #app { display: flex; flex-direction: column; align-items: center; }
+
+    /* Navbar */
+    #navbar {
+      background: linear-gradient(90deg, #1b263b 0%, #2E4057 100%);
+      color: #fff; padding: 16px 32px; position: fixed; top: 0; width: 100%;
+      z-index: 1000; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 2px solid #D4A017; transition: all .3s ease;
+    }
+
+    /* Toggle Button */
+    #toggle-nav {
+      background: none; border: none; color: #D4A017; font-size: 28px; cursor: pointer; padding: 8px;
+      transition: transform .3s ease, color .3s ease;
+    }
+
+    /* Main Content */
+    #content {
+      margin-top: 140px;
+      padding: 24px 12px;
       width: 100%;
+      box-sizing: border-box;
+      overflow-y: visible;
+      overflow-x: visible;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Table & Wrapper */
+    #table-container {
       overflow-x: auto;
       overflow-y: auto;
       max-height: calc(100vh - 250px);
+      width: 100%; max-width: none;
+      display: block;
       position: relative;
       will-change: scroll-position;
       border: 2px solid #D4A017;
       border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
       background: #fff;
       margin: 0;
       overscroll-behavior: contain;
@@ -51,26 +79,76 @@
       -webkit-overflow-scrolling: touch;
       touch-action: pan-x pan-y;
     }
-    /* Scrollbar from original */
-    iframe::-webkit-scrollbar { width: 8px; height: 8px; }
-    iframe::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-    iframe::-webkit-scrollbar-thumb { background: #D4A017; border-radius: 10px; }
-    iframe::-webkit-scrollbar-thumb:hover { background: #ffd605; }
-    /* Mobile adjustments from original @media (max-width:768px) */
+
+    #table-container::-webkit-scrollbar {
+      width: 8px; height: 8px;
+    }
+
+    #table-container::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 10px;
+    }
+
+    #table-container::-webkit-scrollbar-thumb {
+      background: #D4A017;
+      border-radius: 10px;
+    }
+
+    #table-container::-webkit-scrollbar-thumb:hover {
+      background: #ffd605;
+    }
+
+    #table-container > table {
+      width: max-content;
+      min-width: 100%;
+      table-layout: auto;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: #fff;
+      border-radius: 12px;
+      animation: fadeSlideUp .6s ease-out;
+    }
+
+    /* Table Header */
+    #table-container > table th {
+      background: linear-gradient(45deg, #D4A017, #ffd605);
+      color: #1A2A44;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* Table Cells */
+    #table-container > table th.sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: linear-gradient(45deg, #D4A017, #ffd605);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Table Row */
+    #table-container > table tr:nth-child(even) td {
+      background: #e5e7eb;
+    }
+
+    /* Table Row Hover */
+    #table-container > table tr:hover td {
+      background: linear-gradient(45deg, #26A69A, #10b981);
+      color: #fff;
+    }
+
+    /* Table Styling for Small Screens */
     @media (max-width: 768px) {
-      #navbar { padding: 12px 16px; }
-      #sidebar { width: 100%; top: 64px; height: calc(100vh - 64px); padding: 12px; }
-      #content {
-        margin-top: 110px;
-        padding: 12px;
-        overflow-y: visible;
-        overflow-x: visible;
-        margin-left: 0;
-        -webkit-overflow-scrolling: touch;
-      }
-      iframe {
+      #table-container > table {
         table-layout: auto;
         min-width: 100%;
+      }
+
+      th, td {
+        min-width: auto;
         padding: 8px 4px;
         font-size: 12px;
         white-space: nowrap !important;
@@ -83,18 +161,55 @@
         hyphens: none;
         max-width: none;
       }
-      #top-menu { flex-direction: column; align-items: center; padding: 12px; gap: 8px; }
-      .top-menu-group, .top-menu-group-header, .top-menu-group-content { width: 100%; position: static; transform: none; }
-      #table-tools { flex-direction: column; align-items: flex-start; gap: 8px; }
-      #updateTimeBadge { align-self: flex-end; font-size: 0.9em; }
-      iframe { border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 200px); }
-      iframe::before {
-        content: '↔ Swipe left/right to scroll';
-        position: absolute; top: -30px; left: 0; background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; font-size: 10px; border-radius: 4px; opacity: 0; transition: opacity 0.3s;
-        pointer-events: none; z-index: 1;
+
+      /* Navbar adjustments */
+      #navbar {
+        padding: 12px 16px;
       }
-      iframe:hover::before { opacity: 1; }
-      /* Full screen chart modal on mobile */
+
+      /* Sidebar adjustments */
+      #sidebar {
+        width: 100%;
+        top: 64px;
+        height: calc(100vh - 64px);
+        padding: 12px;
+      }
+
+      #content {
+        margin-top: 110px;
+        padding: 12px;
+        margin-left: 0;
+      }
+
+      /* Table Scroll Behavior */
+      #table-container {
+        border-radius: 8px;
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: calc(100vh - 200px);
+      }
+
+      #table-container::before {
+        content: '↔ Swipe left/right to scroll';
+        position: absolute;
+        top: -30px;
+        left: 0;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 4px 8px;
+        font-size: 10px;
+        border-radius: 4px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      #table-container:hover::before {
+        opacity: 1;
+      }
+
+      /* Mobile-specific chart modal adjustments */
       .chart-modal {
         inset: 0 !important;
         padding: 8px;
@@ -106,110 +221,58 @@
         overflow-y: auto;
         overflow-x: hidden;
       }
+
       .chart-backdrop {
         inset: 0 !important;
         z-index: 10000;
       }
-      /* Dropdowns */
-      .filters select {
-        width: 100% !important;
-        min-width: unset !important;
-        max-width: none !important;
-        -webkit-appearance: menulist !important;
-        appearance: menulist !important;
-        font-size: 14px;
-        padding: 10px;
-      }
-      .filters .row {
-        flex-direction: column !important;
-        align-items: stretch !important;
-        gap: 10px !important;
-      }
-      .filters label {
-        min-width: auto !important;
-        width: 100% !important;
-        display: block !important;
-      }
-      .filters .row-tight {
-        flex-direction: column !important;
-        align-items: stretch !important;
-        gap: 8px !important;
-      }
-      .toggle-wrap {
-        justify-content: space-between !important;
-        width: 100% !important;
-      }
-      /* KPIs */
-      .kpis {
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 0.5rem;
-      }
-      .chart-area {
-        height: 60vh !important;
-        min-height: 300px !important;
-      }
-      .table-area {
-        margin-top: 0.5rem;
-      }
-      .table-scroll {
-        max-height: 20vh !important;
-      }
     }
-    /* Landscape from original */
-    @media (orientation: landscape) and (max-width: 768px) {
-      .chart-modal {
-        padding: 4px !important;
-      }
-      .chart-area {
-        height: 75vh !important;
-      }
-      .filters {
-        padding: 8px !important;
-      }
-      .kpis {
-        grid-template-columns: repeat(5, 1fr) !important;
-      }
-      .table-scroll {
-        max-height: 15vh !important;
-      }
-      .filters select {
-        font-size: 12px;
-        padding: 8px;
-        height: 40px;
-      }
-      .filters .row-tight {
-        gap: 6px !important;
-      }
-      iframe {
-        overflow-x: hidden !important;
-      }
-      iframe > table {
-        width: 100% !important;
-        table-layout: fixed !important;
-      }
-      iframe > table th,
-      iframe > table td {
-        white-space: normal !important;
-        word-wrap: break-word !important;
-        overflow-wrap: break-word !important;
-        text-overflow: clip !important;
-        padding: 4px 2px !important;
-        font-size: 10px !important;
-      }
-      iframe::before {
-        display: none !important;
-      }
-    }
+
   </style>
 </head>
 <body>
-  <div class="frame-wrap">
-    <iframe
-      src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
-      title="Pulse Point (Apps Script)"
-      loading="lazy"
-      allow="clipboard-write; geolocation; camera; microphone; autoplay">
-    </iframe>
+  <div id="app">
+    <!-- Login -->
+    <div id="login-container">
+      <span class="logo">Pulse Point</span>
+      <div class="input-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter your username">
+      </div>
+      <div class="input-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter your password">
+      </div>
+      <button onclick="login()">Login</button>
+    </div>
+
+    <!-- Navbar -->
+    <div id="navbar">
+      <button id="toggle-nav">☰</button>
+      <span class="logo">Pulse Point</span>
+      <div id="timestamp"><span class="emoji">🎉</span></div>
+      <button id="btnHourlyChart" class="chart-btn" title="Show hourly analysis">Chart</button>
+      <button id="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Menus + Sidebar -->
+    <div id="top-menu"></div>
+    <div id="sidebar"><div id="sidebar-content"></div></div>
+    <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
+    <!-- Content -->
+    <div id="content">
+      <!-- Content goes here -->
+    </div>
   </div>
+
+  <!-- Loading overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <script>
+    // Your JavaScript functions and event listeners go here
+  </script>
 </body>
 </html>
