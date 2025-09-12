@@ -4,42 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Pulse Point (Embedded)</title>
-  <style>
-    /* Reset body and html margin and padding, set height to 100% */
-    html, body {
-      height: 10%;
-      margin: 0;
-      padding: 0;
-      background: #0b1220;
-      font-family: 'Inter', system-ui, sans-serif;
-    }
-    /* Frame wrapper to ensure the iframe takes full height and width */
-    .frame-wrap {
-      display: flex;
-      height: 100vh;
-      width: 10%;
-      align-items: stretch;
-      justify-content: center;
-    }
-    /* Make iframe responsive by allowing it to scale and maintain aspect ratio */
-    iframe {
-      flex: 1;
-      border: none;
-      height: 10%;
-      width: 10%;
-      min-width: 32px; /* Minimum width for smaller screens */
-      min-height: 48px; /* Minimum height for mobile */
-    }
-  </style>
 </head>
 <body>
-  <div class="frame-wrap">
-    <iframe
-      src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
-      title="Pulse Point (Apps Script)"
-      loading="eager"
-      allow="clipboard-write; geolocation; camera; microphone; autoplay">
-    </iframe>
-  </div>
+  <!-- Direct Link to Your App Script -->
+  <script>
+    window.location.href = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
+  </script>
 </body>
 </html>
