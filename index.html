@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover">
   <title>Pulse Point (Embedded)</title>
   <style>
     /* Reset body and html margin and padding, set height to 100% */
@@ -12,7 +12,8 @@
       padding: 0;
       background: #0b1220;
       font-family: 'Inter', system-ui, sans-serif;
-      overflow: hidden; /* Prevent double-scrolling on mobile */
+      overflow: auto; /* Match app script overflow */
+      -webkit-overflow-scrolling: touch;
     }
     /* Frame wrapper to ensure the iframe takes full height and width */
     .frame-wrap {
