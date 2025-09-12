@@ -50,9 +50,25 @@
       src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
       title="Pulse Point (Apps Script)"
       loading="eager"
-      allow="clipboard-write; geolocation; camera; microphone; autoplay"
-      allowfullscreen>
+      allow="clipboard-write; geolocation; camera; microphone; autoplay; fullscreen"
+      allowfullscreen
+      webkitallowfullscreen
+      mozallowfullscreen>
     </iframe>
   </div>
+  <script>
+    function resizeIframe() {
+      const iframe = document.querySelector('iframe');
+      if (iframe) {
+        iframe.style.height = window.innerHeight + 'px';
+        iframe.style.width = window.innerWidth + 'px';
+      }
+    }
+    window.addEventListener('resize', resizeIframe);
+    window.addEventListener('orientationchange', resizeIframe);
+    resizeIframe(); // Initial resize
+    // Periodic check for mobile browser bars
+    setInterval(resizeIframe, 100);
+  </script>
 </body>
 </html>
