@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Pulse Point (Embedded)</title>
   <style>
     /* Reset body and html margin and padding, set height to 100% */
@@ -15,6 +15,9 @@
       overflow: auto; /* Match app script overflow */
       -webkit-overflow-scrolling: touch;
     }
+    :root {
+      --vh: 1vh;
+    }
     /* Frame wrapper to ensure the iframe takes full height and width */
     .frame-wrap {
       display: flex;
@@ -24,7 +27,7 @@
       right: 0;
       bottom: 0;
       width: 100%;
-      height: 100%;
+      height: calc(100 * var(--vh));
       align-items: stretch;
       justify-content: center;
     }
@@ -58,18 +61,14 @@
     </iframe>
   </div>
   <script>
-    function resizeIframe() {
-      const iframe = document.querySelector('iframe');
-      if (iframe) {
-        iframe.style.height = window.innerHeight + 'px';
-        iframe.style.width = window.innerWidth + 'px';
-      }
+    function updateVH() {
+      document.documentElement.style.setProperty('--vh', (window.innerHeight / 100) + 'px');
     }
-    window.addEventListener('resize', resizeIframe);
-    window.addEventListener('orientationchange', resizeIframe);
-    resizeIframe(); // Initial resize
+    window.addEventListener('resize', updateVH);
+    window.addEventListener('orientationchange', updateVH);
+    updateVH(); // Initial set
     // Periodic check for mobile browser bars
-    setInterval(resizeIframe, 100);
+    setInterval(updateVH, 100);
   </script>
 </body>
 </html>
