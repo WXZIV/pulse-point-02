@@ -2,38 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Pulse Point (Embedded)</title>
   <style>
-    /* Reset body and html margin and padding, set height to 100% */
     html, body {
       height: 100%;
       margin: 0;
       padding: 0;
       background: #0b1220;
       font-family: 'Inter', system-ui, sans-serif;
+      overflow-x: hidden; /* Prevent horizontal scrolling */
     }
-    /* Frame wrapper to ensure the iframe takes full height and width */
     .frame-wrap {
       display: flex;
       height: 100vh;
       width: 100%;
       align-items: stretch;
       justify-content: center;
+      overflow: hidden; /* Prevent overflow */
     }
-    /* Make iframe responsive by allowing it to scale and maintain aspect ratio */
     iframe {
       flex: 1;
       border: none;
       height: 100%;
       width: 100%;
-      min-width: 320px; /* Minimum width for smaller screens */
-      min-height: 480px; /* Minimum height for mobile */
     }
-    /* Optional: Prevent iframe from overflowing */
     @media (max-width: 600px) {
+      .frame-wrap {
+        min-height: 100vh;
+      }
       iframe {
-        min-height: 400px; /* Adjust minimum height for smaller devices */
+        min-height: 100%;
+      }
+    }
+    @media (max-width: 320px) {
+      iframe {
+        display: none;
+      }
+      .fallback {
+        display: block;
+        text-align: center;
+        color: white;
+        padding: 20px;
       }
     }
   </style>
@@ -43,9 +53,12 @@
     <iframe
       src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
       title="Pulse Point (Apps Script)"
-      loading="eager"
+      loading="lazy"
       allow="clipboard-write; geolocation; camera; microphone; autoplay">
     </iframe>
+    <div class="fallback" style="display: none;">
+      Please view this content on a larger screen for the best experience.
+    </div>
   </div>
 </body>
 </html>
