@@ -2,91 +2,89 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Allow native pinch zoom -->
+  <!-- Enable native pinch zoom -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
                  user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
-
   <style>
-    /* Shell: browser handles zoom & pan; we scroll the .wrap to avoid double bars */
+    /* Allow native gestures & panning */
     html, body {
       height: 100%;
       margin: 0;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
       touch-action: pinch-zoom pan-x pan-y;
-      overflow: hidden;
+      overflow: auto; /* pan after zoom */
       background: #0b0b0b;
     }
-
-    /* Fullscreen scroll surface so 1-finger pan works even when zoomed */
+    /* Scroll container for panning when zoomed */
     .wrap {
       position: absolute;
       inset: 0;
-      overflow: auto;                  /* both axes */
+      overflow: auto;
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
-
-    /* Optional virtual desktop width for small phones (gives natural horizontal scroll) */
-    :root { --scale: 1; --basew: 1152px; }
-
-    /* Iframe fills viewport (desktop) */
+    :root { --scale: 1; --basew: 1152px; } /* virtual desktop width on phone */
+    /* Desktop: fill window, no transform */
     #app {
       position: absolute;
       top: 0; left: 0;
       border: 0;
       display: block;
+      background: transparent;
       width: 100vw;
       height: 100dvh;
-      background: transparent;
-      touch-action: pinch-zoom pan-x pan-y;
+      transform: none;
+      touch-action: pinch-zoom pan-x pan-y; /* gestures allowed over iframe element */
     }
-
-    /* On narrow phones: make iframe wider than viewport but scale to fit.
-       That gives horizontal scroll in .wrap while keeping full view initially. */
+    /* Phone: emulate desktop width, then scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      width: var(--basew);
-      height: calc(100dvh / var(--scale));
+      width: var(--basew); /* unscaled width */
+      height: calc(100dvh / var(--scale)); /* fills viewport after scaling */
       will-change: transform;
     }
-
-    /* Overlay: always present but only intercepts when needed.
-       We briefly intercept on first touch (<=140ms) to detect a second finger,
-       then auto-release for tap/scroll. During 2+ fingers, we stay active for pinch. */
+    /* Transparent overlay for pinch gestures */
     #pinchShield {
       position: fixed;
       inset: 0;
-      z-index: 2147483647;
+      z-index: 2147483647; /* above iframe */
       background: transparent;
-      touch-action: pinch-zoom pan-x pan-y;
-      display: block;        /* keep in tree */
-      pointer-events: none;  /* default: not intercepting */
+      touch-action: pinch-zoom pan-x pan-y; /* let browser handle pinch/pan */
+      display: block;
+      pointer-events: none; /* default: interaction mode */
+    }
+    /* Mode indicator */
+    #modeIndicator {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      z-index: 2147483648; /* above shield */
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      opacity: 0.7;
     }
   </style>
-
   <script>
     (function () {
-      // ===== CONFIG =====
+      const DEFAULT_BASE_WIDTH = 1152; // tweak default phone size via ?w=1080 (bigger) or ?w=1280 (smaller)
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
-      const DEFAULT_BASE_WIDTH = 1152;      // change via ?w=1280 etc.
-      const ARM_MS = 140;                   // capture window for possible pinch
-      // ===================
-
-      function qpNumber(name, def) {
+      function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
         const n = v === null ? NaN : Number(v);
         return Number.isFinite(n) && n > 0 ? n : def;
       }
-
       function fit() {
-        const BASE_WIDTH = qpNumber('w', DEFAULT_BASE_WIDTH);
+        const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on narrow screens
+        const scale = Math.min(1, vw / BASE_WIDTH); // downscale only on phones
         if (scale < 0.999) {
           document.body.classList.add('mobile');
           document.documentElement.style.setProperty('--scale', scale.toFixed(4));
@@ -97,94 +95,40 @@
           document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
         }
       }
-
-      function setupSmartPinchOverlay() {
+      function setupDoubleTapToggle() {
         const shield = document.getElementById('pinchShield');
-        const setActive = (on) => { shield.style.pointerEvents = on ? 'auto' : 'none'; };
+        const indicator = document.getElementById('modeIndicator');
+        let lastTapTime = 0;
+        let isInteractionMode = true; // default to interaction
 
-        let armTimer = null;           // arming window timer
-        let touchCount = 0;
-        const activePointers = new Set();
-
-        const armForPossiblePinch = () => {
-          clearTimeout(armTimer);
-          setActive(true);             // capture immediately on first touch
-          armTimer = setTimeout(() => {
-            // If no second finger joined, release for normal tap/scroll
-            if (touchCount < 2 && activePointers.size < 2) setActive(false);
-          }, ARM_MS);
-        };
-
-        const endPinchIfNeeded = () => {
-          // If fewer than 2 contacts remain, stop intercepting
-          if (touchCount < 2 && activePointers.size < 2) {
-            clearTimeout(armTimer);
-            setActive(false);
+        function updateMode() {
+          if (isInteractionMode) {
+            shield.style.pointerEvents = 'none';
+            indicator.textContent = 'Interaction Mode (Double-tap to switch)';
+          } else {
+            shield.style.pointerEvents = 'auto';
+            indicator.textContent = 'Zoom Mode (Double-tap to switch)';
           }
-        };
-
-        // ----- Pointer Events (Chrome/Android & modern browsers)
-        window.addEventListener('pointerdown', (e) => {
-          if (e.pointerType === 'touch') {
-            if (activePointers.size === 0) armForPossiblePinch(); // first finger
-            activePointers.add(e.pointerId);
-            if (activePointers.size >= 2) {
-              clearTimeout(armTimer);
-              setActive(true); // solid pinch
-            }
-          }
-        }, { passive: true });
-
-        const pointerFinish = (e) => {
-          if (e.pointerType === 'touch') {
-            activePointers.delete(e.pointerId);
-            endPinchIfNeeded();
-          }
-        };
-        window.addEventListener('pointerup', pointerFinish, { passive: true });
-        window.addEventListener('pointercancel', pointerFinish, { passive: true });
-
-        // ----- Touch fallback (older browsers)
-        window.addEventListener('touchstart', (e) => {
-          touchCount = e.touches.length;
-          if (touchCount === 1) {
-            armForPossiblePinch();     // give a tiny window for a second finger
-          } else if (touchCount >= 2) {
-            clearTimeout(armTimer);
-            setActive(true);
-          }
-        }, { passive: true });
-
-        window.addEventListener('touchmove', (e) => {
-          touchCount = e.touches.length;
-          if (touchCount >= 2) {
-            clearTimeout(armTimer);
-            setActive(true);
-          }
-        }, { passive: true });
+        }
 
         window.addEventListener('touchend', (e) => {
-          touchCount = e.touches.length;
-          endPinchIfNeeded();
+          if (e.touches.length === 0) { // end of a tap
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              isInteractionMode = !isInteractionMode;
+              updateMode();
+            }
+            lastTapTime = now;
+          }
         }, { passive: true });
 
-        window.addEventListener('touchcancel', () => {
-          touchCount = 0;
-          endPinchIfNeeded();
-        }, { passive: true });
-
-        // ----- iOS Safari gesture events (extra safety)
-        window.addEventListener('gesturestart', () => { clearTimeout(armTimer); setActive(true); },  { passive: true });
-        window.addEventListener('gestureend',   () => { clearTimeout(armTimer); setActive(false); }, { passive: true });
-        window.addEventListener('gesturecancel',() => { clearTimeout(armTimer); setActive(false); }, { passive: true });
+        updateMode(); // initial
       }
-
       function init() {
-        fit(); // set initial scale before iframe load to avoid flash
+        fit(); // size before load to avoid flash
         document.getElementById('app').src = GAS_URL;
-        setupSmartPinchOverlay();
+        setupDoubleTapToggle();
       }
-
       document.addEventListener('DOMContentLoaded', init, { passive: true });
       window.addEventListener('resize', fit, { passive: true });
       window.addEventListener('orientationchange', fit, { passive: true });
@@ -193,11 +137,11 @@
 </head>
 <body>
   <div class="wrap">
-    <iframe id="app" title="Pulse Point App"
-            loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
+    <iframe id="app" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
   </div>
-
-  <!-- Intercepts only during the arming window or while 2 fingers are down -->
+  <!-- Transparent pinch overlay -->
   <div id="pinchShield" aria-hidden="true"></div>
+  <!-- Mode indicator -->
+  <div id="modeIndicator"></div>
 </body>
 </html>
