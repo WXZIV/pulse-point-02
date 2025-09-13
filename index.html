@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Enable native zoom; keep auto-fit working -->
+  <!-- Allow native pinch zoom -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
@@ -11,47 +11,47 @@
 
   <style>
     html, body {
-      height: 100%; margin: 0;
-      -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+      height: 100%;
+      margin: 0;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      /* Let the browser handle pinch-zoom + pan anywhere */
+      touch-action: pinch-zoom pan-x pan-y;
+      overflow: auto;
       background: #0b0b0b;
     }
 
-    .wrap { position: absolute; inset: 0; overflow: auto; background:#0b0b0b; }
-
-    :root { --scale: 1; --basew: 1152px; }
-
-    /* Desktop: fill window, no transform */
-    #app {
-      position: absolute; top: 0; left: 0; border: 0; display: block; background: transparent;
-      transform: none; width: 100vw; height: 100dvh;
-    }
-    /* Phone: emulate desktop width then scale down */
-    body.mobile #app {
-      transform-origin: top left; transform: scale(var(--scale));
-      width: var(--basew); height: calc(100dvh / var(--scale)); will-change: transform;
-    }
-
-    /* Floating zoom toggle */
-    .zoom-btn {
-      position: fixed; right: 12px; bottom: 12px; z-index: 9999;
-      padding: 10px 14px; border-radius: 999px; font: 14px/1 system-ui, sans-serif;
-      border: 1px solid #334155; background: #0f172a; color: #e5e7eb; opacity: .9;
-    }
-    .zoom-btn:active { transform: translateY(1px); }
-
-    /* Zoom shield: when ON, sits above the iframe and lets the browser handle pinch anywhere */
-    .shield {
-      position: fixed; inset: 0; z-index: 9998; background: transparent;
-      /* Critical: let browser do native pinch & pan on the shield */
-      touch-action: pinch-zoom pan-x pan-y;
-      /* Ensure you can pan while zoomed */
+    /* Scroll container so you can pan after zooming */
+    .wrap {
+      position: absolute; inset: 0;
       overflow: auto; -webkit-overflow-scrolling: touch;
+      background: #0b0b0b;
     }
-    .hidden { display: none; }
+
+    :root { --scale: 1; --basew: 1152px; }  /* virtual desktop width for phone */
+
+    /* DESKTOP: fill window, no transform */
+    #app {
+      position: absolute; top: 0; left: 0;
+      border: 0; display: block; background: transparent;
+      width: 100vw; height: 100dvh; transform: none;
+      /* Allow gestures directly over iframe element */
+      touch-action: pinch-zoom pan-x pan-y;
+    }
+
+    /* PHONE: emulate desktop width, then scale down to fit */
+    body.mobile #app {
+      transform-origin: top left;
+      transform: scale(var(--scale));
+      width: var(--basew);
+      height: calc(100dvh / var(--scale));
+      will-change: transform;
+    }
   </style>
 
   <script>
     (function () {
+      // Tweak the default phone size via URL: ?w=1080 (bigger), ?w=1280 (smaller)
       const DEFAULT_BASE_WIDTH = 1152;
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
@@ -64,7 +64,7 @@
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH);  // downscale only on phones
+        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on phones
 
         if (scale < 0.999) {
           document.body.classList.add('mobile');
@@ -80,26 +80,6 @@
       function init() {
         fit();
         document.getElementById('app').src = GAS_URL;
-
-        const btn = document.getElementById('zoomToggle');
-        const shield = document.getElementById('zoomShield');
-        btn.addEventListener('click', () => {
-          const on = shield.classList.toggle('hidden');
-          // toggle returns true when class was added; we want label to reflect state
-          btn.textContent = shield.classList.contains('hidden') ? '🔍 Zoom' : '✅ Pinch Enabled';
-        });
-
-        // Optional: auto-hide shield after 2s of no touches (so you can interact again)
-        let touchTimer = null;
-        ['touchstart','touchmove'].forEach(ev =>
-          shield.addEventListener(ev, () => {
-            clearTimeout(touchTimer);
-            touchTimer = setTimeout(() => {
-              shield.classList.add('hidden');
-              btn.textContent = '🔍 Zoom';
-            }, 2000);
-          }, {passive:true})
-        );
       }
 
       document.addEventListener('DOMContentLoaded', init, { passive: true });
@@ -112,18 +92,5 @@
   <div class="wrap">
     <iframe id="app" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
   </div>
-
-  <!-- Zoom control + shield (use when GAS page blocks pinch inside table) -->
-  <button id="zoomToggle" class="zoom-btn">🔍 Zoom</button>
-  <div id="zoomShield" class="shield hidden" aria-hidden="true"></div>
-
-  <noscript>
-    <p style="padding:16px;color:#fff">
-      Please enable JavaScript. If the frame doesn't load,
-      <a style="color:#6cf" href="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec" target="_blank" rel="noopener">
-        open the Apps Script directly
-      </a>.
-    </p>
-  </noscript>
 </body>
 </html>
