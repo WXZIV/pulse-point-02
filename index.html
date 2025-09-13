@@ -2,34 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Pinch zoom ON -->
+  <!-- Enable native pinch-zoom + wide zoom range -->
   <meta name="viewport"
-        content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+        content="width=device-width, initial-scale=1, minimum-scale=0.25, maximum-scale=10, user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
 
   <style>
     html, body {
       height: 100%;
       margin: 0;
+      /* Keep text size stable and allow native gestures */
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      /* Allow native gestures everywhere */
       touch-action: pinch-zoom pan-x pan-y;
+      /* If the page is zoomed in, allow panning the whole document */
+      overflow: auto;
     }
     body { background: #0b0b0b; }
 
-    /* Scrollable wrapper so you can pan after zooming */
+    /* Scrollable wrapper so after zoom you can pan freely */
     .wrap {
-      position: fixed;
+      position: absolute;       /* absolute avoids iOS quirks with fixed + zoom */
       inset: 0;
-      overflow: auto;                      /* <-- allow panning after pinch-zoom */
-      -webkit-overflow-scrolling: touch;   /* smooth scroll on iOS */
+      overflow: auto;           /* <-- critical for panning after zoom */
+      -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1152px; } /* virtual desktop width for phone, tweak with ?w=... */
+    :root { --scale: 1; --basew: 1152px; }   /* phone “virtual desktop width” */
 
-    /* DESKTOP mode (wide screens): fill window, no scaling */
+    /* DESKTOP mode (wide screens): fill window, no CSS transform */
     #app {
       position: absolute;
       top: 0; left: 0;
@@ -39,14 +41,15 @@
       transform: none;
       width: 100vw;
       height: 100dvh;
-      touch-action: pinch-zoom pan-x pan-y; /* gestures work on iframe too */
+      /* allow gestures directly over the iframe (important for tables) */
+      touch-action: pinch-zoom pan-x pan-y;
     }
 
-    /* MOBILE mode (narrow screens): emulate desktop width, scale down to fit */
+    /* MOBILE mode: emulate desktop width, then scale down to fit phone */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      width: var(--basew);                  /* unscaled virtual width (desktop look) */
+      width: var(--basew);                  /* unscaled virtual desktop width */
       height: calc(100dvh / var(--scale));  /* fills viewport after scaling */
       will-change: transform;
     }
@@ -54,7 +57,7 @@
 
   <script>
     (function () {
-      // Default phone size slightly larger but still fits; override with ?w=...
+      // Default phone size (bigger UI but still fits). Change with ?w=..., e.g. ?w=1080 or ?w=1280
       const DEFAULT_BASE_WIDTH = 1152;
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
@@ -67,7 +70,8 @@
       function fit() {
         const BASE_WIDTH = getParamNumber('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH);  // scale down on phone; desktop = 1
+        // Scale down on narrow screens; on desktop use full width (no transform)
+        const scale = Math.min(1, vw / BASE_WIDTH);
 
         if (scale < 0.999) {
           document.body.classList.add('mobile');
@@ -81,7 +85,7 @@
       }
 
       function init() {
-        fit(); // avoid flash
+        fit(); // size before loading to avoid flash
         document.getElementById('app').src = GAS_URL;
       }
 
