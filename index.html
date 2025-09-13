@@ -2,36 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Enable native pinch-zoom + wide zoom range -->
+  <!-- Enable native pinch zoom across devices -->
   <meta name="viewport"
-        content="width=device-width, initial-scale=1, minimum-scale=0.25, maximum-scale=10, user-scalable=yes, viewport-fit=cover" />
+        content="width=device-width, initial-scale=1,
+                 minimum-scale=0.25, maximum-scale=10,
+                 user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
 
   <style>
+    /* Base: allow the browser's own pinch-zoom and panning */
     html, body {
       height: 100%;
       margin: 0;
-      /* Keep text size stable and allow native gestures */
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      touch-action: pinch-zoom pan-x pan-y;
-      /* If the page is zoomed in, allow panning the whole document */
-      overflow: auto;
+      touch-action: auto;              /* don't block gestures */
+      overflow: auto;                  /* allow panning after zoom */
+      background: #0b0b0b;
     }
-    body { background: #0b0b0b; }
 
-    /* Scrollable wrapper so after zoom you can pan freely */
+    /* Scrollable wrapper so you can drag/pan when zoomed in */
     .wrap {
-      position: absolute;       /* absolute avoids iOS quirks with fixed + zoom */
+      position: absolute;              /* more reliable than fixed when zooming on iOS */
       inset: 0;
-      overflow: auto;           /* <-- critical for panning after zoom */
+      overflow: auto;                  /* critical for panning after pinch-zoom */
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1152px; }   /* phone “virtual desktop width” */
+    :root { --scale: 1; --basew: 1152px; } /* phone “virtual desktop width” (bigger UI), override with ?w=... */
 
-    /* DESKTOP mode (wide screens): fill window, no CSS transform */
+    /* DESKTOP mode (wide screens): no transform, fill the window */
     #app {
       position: absolute;
       top: 0; left: 0;
@@ -40,24 +41,26 @@
       background: transparent;
       transform: none;
       width: 100vw;
+      height: 100vh;                   /* stable with zoom */
       height: 100dvh;
-      /* allow gestures directly over the iframe (important for tables) */
-      touch-action: pinch-zoom pan-x pan-y;
+      touch-action: auto;              /* allow pinch/pan directly over the iframe */
+      pointer-events: auto;            /* keep interactions inside the iframe */
+      will-change: transform;
     }
 
-    /* MOBILE mode: emulate desktop width, then scale down to fit phone */
+    /* MOBILE mode (narrow screens): emulate desktop width, then scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
       width: var(--basew);                  /* unscaled virtual desktop width */
       height: calc(100dvh / var(--scale));  /* fills viewport after scaling */
-      will-change: transform;
     }
   </style>
 
   <script>
     (function () {
-      // Default phone size (bigger UI but still fits). Change with ?w=..., e.g. ?w=1080 or ?w=1280
+      // Default phone size (looks comfortably large but still fits).
+      // You can tweak without redeploy via URL: ?w=1080 (bigger), ?w=1280 (smaller)
       const DEFAULT_BASE_WIDTH = 1152;
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
@@ -70,7 +73,8 @@
       function fit() {
         const BASE_WIDTH = getParamNumber('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        // Scale down on narrow screens; on desktop use full width (no transform)
+
+        // Scale down on narrow screens; desktop uses full width (no transform)
         const scale = Math.min(1, vw / BASE_WIDTH);
 
         if (scale < 0.999) {
@@ -85,7 +89,7 @@
       }
 
       function init() {
-        fit(); // size before loading to avoid flash
+        fit();                                   // size before load to avoid flash
         document.getElementById('app').src = GAS_URL;
       }
 
