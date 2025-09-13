@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Allow native pinch zoom -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
@@ -15,31 +14,30 @@
       margin: 0;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      /* Let the browser handle pinch-zoom + pan anywhere */
-      touch-action: pinch-zoom pan-x pan-y;
-      overflow: auto;
+      touch-action: pinch-zoom pan-x pan-y; /* allow native gestures */
+      overflow: auto;                       /* pan after zoom */
       background: #0b0b0b;
     }
 
-    /* Scroll container so you can pan after zooming */
     .wrap {
       position: absolute; inset: 0;
       overflow: auto; -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1152px; }  /* virtual desktop width for phone */
+    :root { --scale: 1; --basew: 1152px; }  /* phone virtual desktop width */
 
-    /* DESKTOP: fill window, no transform */
+    /* Desktop: fill window, no transform */
     #app {
       position: absolute; top: 0; left: 0;
-      border: 0; display: block; background: transparent;
-      width: 100vw; height: 100dvh; transform: none;
-      /* Allow gestures directly over iframe element */
-      touch-action: pinch-zoom pan-x pan-y;
+      border: 0; display: block;
+      background: transparent;
+      width: 100vw; height: 100dvh;
+      transform: none;
+      touch-action: pinch-zoom pan-x pan-y; /* allow gestures over iframe element */
     }
 
-    /* PHONE: emulate desktop width, then scale down to fit */
+    /* Phone: emulate desktop width, then scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
@@ -51,8 +49,7 @@
 
   <script>
     (function () {
-      // Tweak the default phone size via URL: ?w=1080 (bigger), ?w=1280 (smaller)
-      const DEFAULT_BASE_WIDTH = 1152;
+      const DEFAULT_BASE_WIDTH = 1152; // tweak with ?w=1080 (bigger) or ?w=1280 (smaller)
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
       function numParam(name, def) {
@@ -65,7 +62,6 @@
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
         const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on phones
-
         if (scale < 0.999) {
           document.body.classList.add('mobile');
           document.documentElement.style.setProperty('--scale', scale.toFixed(4));
@@ -77,12 +73,11 @@
         }
       }
 
-      function init() {
+      document.addEventListener('DOMContentLoaded', () => {
         fit();
         document.getElementById('app').src = GAS_URL;
-      }
+      }, { passive: true });
 
-      document.addEventListener('DOMContentLoaded', init, { passive: true });
       window.addEventListener('resize', fit, { passive: true });
       window.addEventListener('orientationchange', fit, { passive: true });
     })();
