@@ -2,48 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <!-- Zoom enabled on phones -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
 
   <style>
-    html, body { height: 100%; margin: 0; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      touch-action: pinch-zoom pan-x pan-y;   /* allow pinch/pan */
+    }
     body { background: #0b0b0b; }
 
     .wrap {
       position: fixed;
       inset: 0;
-      overflow: hidden;                 /* avoid outer scrollbars from scaling math */
+      overflow: hidden;                       /* avoid outer scrollbars from scaling math */
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1280px; }  /* JS updates for mobile mode */
+    :root { --scale: 1; --basew: 1152px; }    /* JS updates on load/resize */
 
-    /* Default = DESKTOP mode: fill the screen, no scale */
+    /* DESKTOP mode (wide screens): fill the window, no scaling */
     #app {
       position: absolute;
       top: 0; left: 0;
       border: 0;
       display: block;
       background: transparent;
-      transform: none;                  /* no scaling on desktop */
-      width: 100vw;                     /* use full browser width */
-      height: 100dvh;                   /* use full browser height */
+      transform: none;
+      width: 100vw;
+      height: 100dvh;
+      touch-action: pinch-zoom pan-x pan-y;   /* allow gestures on iframe */
     }
 
-    /* MOBILE mode: emulate a wider virtual width and scale down */
+    /* MOBILE mode (narrow screens): emulate a wider width then scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      width: var(--basew);              /* unscaled virtual width (e.g., 1280px) */
-      height: calc(100dvh / var(--scale));
+      width: var(--basew);                     /* unscaled virtual width for the GAS app */
+      height: calc(100dvh / var(--scale));     /* fills viewport after scaling */
       will-change: transform;
     }
   </style>
 
   <script>
     (function () {
-      // Desktop look inside the iframe; override with ?w=1366 etc.
-      const DEFAULT_BASE_WIDTH = 1280;
+      // Default phone virtual width (bigger UI on phone). Override with ?w=...
+      const DEFAULT_BASE_WIDTH = 1152;   // was 1280; smaller => looks bigger while still fitting
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
       function getParamNumber(name, def) {
@@ -56,16 +65,14 @@
         const BASE_WIDTH = getParamNumber('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
 
-        // Only scale DOWN on narrow screens; on desktop use full width (no scale)
+        // Scale down to fit (never up). If scale<1 => mobile mode; else desktop mode.
         const scale = Math.min(1, vw / BASE_WIDTH);
 
         if (scale < 0.999) {
-          // MOBILE MODE
           document.body.classList.add('mobile');
           document.documentElement.style.setProperty('--scale', scale.toFixed(4));
           document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
         } else {
-          // DESKTOP MODE
           document.body.classList.remove('mobile');
           document.documentElement.style.setProperty('--scale', '1');
           document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
@@ -73,7 +80,7 @@
       }
 
       function init() {
-        fit(); // size before loading to avoid flash
+        fit();                               // size before load to avoid flash
         document.getElementById('app').src = GAS_URL;
       }
 
