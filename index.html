@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Keep native pinch-zoom on all devices -->
+  <!-- Let the browser handle native pinch-zoom -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
                  user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point (GitHub Wrapper)</title>
   <style>
+    /* Page basics */
     html, body {
       height: 100%;
       margin: 0;
@@ -16,56 +17,60 @@
       color: #fff;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
+      /* Allow natural panning/zooming */
       touch-action: pinch-zoom pan-x pan-y;
       overflow: auto;
     }
+
+    /* Scroll container (so you can pan when zoomed-in) */
     .wrap {
       position: fixed;
       inset: 0;
       overflow: auto;
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    /* Virtual desktop width used only on narrow screens */
-    :root { --basew: 1280px; --scale: 1; }
+    /* Virtual desktop width (helps desktop-style tables fit on phones) */
+    :root { --basew: 1200px; --scale: 1; }
 
-    /* Iframe fills the window on desktop (no transform) */
+    /* Iframe defaults (desktop) */
     #app {
       position: absolute;
-      inset: 0;
+      top: 0; left: 0;
       width: 100vw;
       height: 100dvh;
-      height: 100svh;
       border: 0;
       background: transparent;
       display: block;
+      /* Important: let gestures pass to the browser */
       touch-action: pinch-zoom pan-x pan-y;
-      backface-visibility: hidden;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Phone/narrow windows: scale to fit width (normal full fit) */
+    /* On narrow screens, scale the iframe down to fit width,
+       but still allow pinch-zoom over it. */
     body.mobile #app {
       transform-origin: top left;
-      transform: translateZ(0) scale(var(--scale));
+      transform: scale(var(--scale));
       width: var(--basew);                  /* unscaled width */
-      height: calc(100svh / var(--scale));  /* fills viewport after scaling */
+      height: calc(100dvh / var(--scale));  /* fills viewport after scaling */
       will-change: transform;
     }
 
-    /* Overlay so a two-finger pinch can start over the iframe/table */
+    /* Transparent overlay that becomes touchable only during 2-finger gestures.
+       This makes pinch-zoom work even when starting over the table inside the iframe. */
     #gestureShield {
       position: fixed;
       inset: 0;
-      z-index: 2147483647;
+      z-index: 2147483647;       /* above iframe */
       background: transparent;
-      pointer-events: auto;                 /* armed by default */
-      touch-action: pinch-zoom pan-x pan-y; /* let browser handle gestures */
-      -webkit-user-select: none; user-select: none;
+      pointer-events: none;      /* clicks/taps pass through by default */
+      /* Tell the browser it's OK to pinch and pan here */
+      touch-action: pinch-zoom pan-x pan-y;
     }
+
+    /* Optional tiny helper label (toggle to debug) */
+    #hint { position: fixed; bottom: 8px; left: 8px; opacity: .35; font: 12px/1.2 system-ui, sans-serif; }
   </style>
 </head>
 <body>
@@ -80,23 +85,17 @@
     </iframe>
   </div>
 
+  <!-- Overlay that activates only while pinching -->
   <div id="gestureShield" aria-hidden="true"></div>
+  <!-- <div id="hint">1-finger: scroll & tap • 2-finger: pinch-zoom</div> -->
 
   <script>
     (function () {
       // 👉 Your Apps Script Web App URL
-      const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
-      // Optional: allow ?src=<url> override
-      const qsSrc = new URL(location.href).searchParams.get("src");
-      const APP_URL = qsSrc || GAS_URL;
+      const GAS_URL = "https://script.google.com/macros/s/AKfycbyQf1Hi15rMeyfPpmEX1Mh5lg0gKECRQrVb7HAnqlPJc_GBbcFnOaOx1x0H9ib6A9bA/exec";
 
-      // Fit logic:
-      // - Desktop (>= DESKTOP_MIN): no scaling (true full fit)
-      // - Narrow windows/phones: scale = viewportWidth / baseWidth (fit-to-width)
-      const DESKTOP_MIN        = 1280;        // treat >= this as desktop (no transform)
-      const DEFAULT_BASE_WIDTH = 1280;        // “normal” desktop content width
-      const MIN_SCALE          = 0.30;
-      const MAX_SCALE          = 0.999;       // just below 1 to avoid Safari jitter
+      // You can change the virtual desktop width via ?w= in the URL if you like
+      const DEFAULT_BASE_WIDTH = 1200;
 
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -104,82 +103,94 @@
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
+      // Fit the iframe to screen (scale down for phones)
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+        const scale = Math.min(1, vw / BASE_WIDTH); // only downscale on small screens
 
         document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
 
-        if (vw >= DESKTOP_MIN) {
-          // Desktop: fill window, no transform
+        if (scale < 0.999) {
+          document.body.classList.add('mobile');
+          document.documentElement.style.setProperty('--scale', scale.toFixed(4));
+        } else {
           document.body.classList.remove('mobile');
           document.documentElement.style.setProperty('--scale', '1');
-          return;
         }
-
-        // Phone / narrow window: fit-to-width
-        let scale = vw / BASE_WIDTH;
-        const dpr  = Math.max(1, window.devicePixelRatio || 1);
-        const step = 1 / (dpr * 4); // snap to reduce blur
-        scale = Math.round(scale / step) / step;
-        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
-
-        document.body.classList.add('mobile');
-        document.documentElement.style.setProperty('--scale', scale.toFixed(4));
       }
 
-      // Pinch-zoom that works on Android + iPhone (even over the iframe)
+      // Make pinch-zoom always work—even when you start over the iframe/table.
+      // Logic:
+      //  • pointer-events: none  → taps/scrolls go through to iframe (1 finger)
+      //  • pointer-events: auto  → browser captures gesture for pinch (2+ fingers)
       function setupGestureShield() {
         const shield = document.getElementById('gestureShield');
-        let singleTimer = null;
+        let touchCount = 0;
+        let pointerTouchCount = 0;
 
-        function releaseSoonForSingle() {
-          clearTimeout(singleTimer);
-          singleTimer = setTimeout(() => { shield.style.pointerEvents = 'none'; }, 60);
-        }
-        function keepArmed() {
-          clearTimeout(singleTimer);
-          shield.style.pointerEvents = 'auto';
-        }
-
-        // iOS Safari gesture events
-        window.addEventListener('gesturestart',  keepArmed, { passive: true });
-        window.addEventListener('gesturechange', keepArmed, { passive: true });
-        window.addEventListener('gestureend',   () => { shield.style.pointerEvents = 'none'; }, { passive: true });
-
-        // Touch fallback (Android + some iOS builds)
+        // Touch Events (iOS/Safari)
         window.addEventListener('touchstart', (e) => {
-          const n = e.touches ? e.touches.length : 0;
-          if (n >= 2) keepArmed(); else releaseSoonForSingle();
+          touchCount = e.touches.length;
+          shield.style.pointerEvents = (touchCount >= 2) ? 'auto' : 'none';
         }, { capture: true, passive: true });
 
         window.addEventListener('touchmove', (e) => {
-          const n = e.touches ? e.touches.length : 0;
-          if (n >= 2) keepArmed();
+          touchCount = e.touches.length;
+          shield.style.pointerEvents = (touchCount >= 2) ? 'auto' : 'none';
         }, { capture: true, passive: true });
 
-        window.addEventListener('touchend',   () => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
-        window.addEventListener('touchcancel',() => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
+        window.addEventListener('touchend', (e) => {
+          touchCount = e.touches.length;
+          if (touchCount < 2) shield.style.pointerEvents = 'none';
+        }, { capture: true, passive: true });
 
-        // Trackpad pinch on desktop (ctrl+wheel)
-        let wheelTimer = null;
-        window.addEventListener('wheel', (e) => {
-          if (e.ctrlKey) {
-            keepArmed();
-            clearTimeout(wheelTimer);
-            wheelTimer = setTimeout(() => { shield.style.pointerEvents = 'none'; }, 200);
+        window.addEventListener('touchcancel', () => {
+          touchCount = 0;
+          shield.style.pointerEvents = 'none';
+        }, { capture: true, passive: true });
+
+        // Pointer Events (Android/Chrome, modern iOS)
+        window.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount++;
+            shield.style.pointerEvents = (pointerTouchCount >= 2) ? 'auto' : 'none';
           }
-        }, { passive: true });
+        }, { capture: true, passive: true });
 
-        // Let first tap/scroll go through after paint
-        setTimeout(() => { shield.style.pointerEvents = 'none'; }, 0);
+        window.addEventListener('pointerup', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount = Math.max(0, pointerTouchCount - 1);
+            if (pointerTouchCount < 2) shield.style.pointerEvents = 'none';
+          }
+        }, { capture: true, passive: true });
+
+        window.addEventListener('pointercancel', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount = 0;
+            shield.style.pointerEvents = 'none';
+          }
+        }, { capture: true, passive: true });
+
+        // Safari gesture events (extra safety)
+        window.addEventListener('gesturestart', () => {
+          shield.style.pointerEvents = 'auto';
+        }, { passive: true });
+        window.addEventListener('gestureend', () => {
+          shield.style.pointerEvents = 'none';
+        }, { passive: true });
       }
 
       function init() {
-        document.getElementById('app').src = APP_URL;
+        // Load your app
+        document.getElementById('app').src = GAS_URL;
+
+        // Set initial fit and listeners
         fit();
         window.addEventListener('resize', fit, { passive: true });
         window.addEventListener('orientationchange', fit, { passive: true });
+
+        // Enable reliable pinch-zoom
         setupGestureShield();
       }
 
