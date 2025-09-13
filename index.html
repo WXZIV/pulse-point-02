@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Zoom enabled on phones -->
+  <!-- Pinch zoom ON -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
@@ -13,20 +13,23 @@
       margin: 0;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      touch-action: pinch-zoom pan-x pan-y;   /* allow pinch/pan */
+      /* Allow native gestures everywhere */
+      touch-action: pinch-zoom pan-x pan-y;
     }
     body { background: #0b0b0b; }
 
+    /* Scrollable wrapper so you can pan after zooming */
     .wrap {
       position: fixed;
       inset: 0;
-      overflow: hidden;                       /* avoid outer scrollbars from scaling math */
+      overflow: auto;                      /* <-- allow panning after pinch-zoom */
+      -webkit-overflow-scrolling: touch;   /* smooth scroll on iOS */
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1152px; }    /* JS updates on load/resize */
+    :root { --scale: 1; --basew: 1152px; } /* virtual desktop width for phone, tweak with ?w=... */
 
-    /* DESKTOP mode (wide screens): fill the window, no scaling */
+    /* DESKTOP mode (wide screens): fill window, no scaling */
     #app {
       position: absolute;
       top: 0; left: 0;
@@ -36,23 +39,23 @@
       transform: none;
       width: 100vw;
       height: 100dvh;
-      touch-action: pinch-zoom pan-x pan-y;   /* allow gestures on iframe */
+      touch-action: pinch-zoom pan-x pan-y; /* gestures work on iframe too */
     }
 
-    /* MOBILE mode (narrow screens): emulate a wider width then scale down to fit */
+    /* MOBILE mode (narrow screens): emulate desktop width, scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      width: var(--basew);                     /* unscaled virtual width for the GAS app */
-      height: calc(100dvh / var(--scale));     /* fills viewport after scaling */
+      width: var(--basew);                  /* unscaled virtual width (desktop look) */
+      height: calc(100dvh / var(--scale));  /* fills viewport after scaling */
       will-change: transform;
     }
   </style>
 
   <script>
     (function () {
-      // Default phone virtual width (bigger UI on phone). Override with ?w=...
-      const DEFAULT_BASE_WIDTH = 1152;   // was 1280; smaller => looks bigger while still fitting
+      // Default phone size slightly larger but still fits; override with ?w=...
+      const DEFAULT_BASE_WIDTH = 1152;
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
       function getParamNumber(name, def) {
@@ -64,9 +67,7 @@
       function fit() {
         const BASE_WIDTH = getParamNumber('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-
-        // Scale down to fit (never up). If scale<1 => mobile mode; else desktop mode.
-        const scale = Math.min(1, vw / BASE_WIDTH);
+        const scale = Math.min(1, vw / BASE_WIDTH);  // scale down on phone; desktop = 1
 
         if (scale < 0.999) {
           document.body.classList.add('mobile');
@@ -80,7 +81,7 @@
       }
 
       function init() {
-        fit();                               // size before load to avoid flash
+        fit(); // avoid flash
         document.getElementById('app').src = GAS_URL;
       }
 
