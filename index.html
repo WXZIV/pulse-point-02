@@ -2,86 +2,277 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Allow native pinch zoom -->
+  <!-- Allow nice viewport on phones -->
   <meta name="viewport"
-        content="width=device-width, initial-scale=1,
-                 minimum-scale=0.25, maximum-scale=10,
-                 user-scalable=yes, viewport-fit=cover" />
+        content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Pulse Point</title>
 
   <style>
     html, body {
-      height: 100%; margin: 0;
-      -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
-      touch-action: pinch-zoom pan-x pan-y;   /* allow gestures */
-      overflow: auto;                         /* pan after zoom */
+      height: 100%;
+      margin: 0;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
       background: #0b0b0b;
+      overflow: hidden; /* we'll manage scroll via the pan/zoom layer */
     }
-    .wrap {
-      position: absolute; inset: 0;
-      overflow: auto; -webkit-overflow-scrolling: touch;
-      background: #0b0b0b;
-    }
-    :root { --scale: 1; --basew: 1152px; }    /* phone “virtual desktop width” */
 
-    /* Desktop: fill window, no transform */
-    #app {
-      position: absolute; top: 0; left: 0;
-      border: 0; display: block; background: transparent;
-      width: 100vw; height: 100dvh; transform: none;
-      touch-action: pinch-zoom pan-x pan-y;
+    /* Stage = the thing we transform (scale + translate) */
+    .stage {
+      position: fixed;
+      inset: 0;
+      overflow: hidden; /* avoid native scroll while we manage panning */
+      touch-action: none; /* we handle gestures ourselves */
+      background: #0b0b0b;
     }
-    /* Phone: emulate desktop width, then scale down to fit */
-    body.mobile #app {
-      transform-origin: top left;
-      transform: scale(var(--scale));
-      width: var(--basew);
-      height: calc(100dvh / var(--scale));
+
+    /* Iframe wrapper we scale/translate */
+    .content {
+      position: absolute;
+      top: 0; left: 0;
+      transform-origin: 0 0; /* top-left for clean math */
       will-change: transform;
     }
+
+    /* The embedded app */
+    #app {
+      border: 0;
+      display: block;
+      background: transparent;
+      width: var(--basew, 1152px);   /* unscaled width (virtual desktop width) */
+      height: var(--baseh, 800px);   /* JS will set a proper height */
+    }
+
+    /* Tiny hint (desktop only) */
+    @media (hover:hover) and (pointer:fine) {
+      .hint {
+        position: fixed; right: 10px; bottom: 10px;
+        color: #9aa4b2; font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        opacity: .7;
+      }
+    }
   </style>
+</head>
+<body>
+  <div id="stage" class="stage">
+    <div id="content" class="content">
+      <iframe id="app"
+              src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
+              loading="eager"
+              referrerpolicy="no-referrer"
+              allowfullscreen>
+      </iframe>
+    </div>
+  </div>
+  <div class="hint">Pinch (2 fingers) to zoom, drag (1 finger) to pan, double-tap to reset, long-press to interact.</div>
 
   <script>
     (function () {
-      const DEFAULT_BASE_WIDTH = 1152; // tweak with ?w=1080 (bigger UI) or ?w=1280 (smaller)
-      const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
+      // ---------- Config ----------
+      const BASE_WIDTH = 1152;         // virtual desktop width for the iframe (looks good on phone)
+      const MIN_ZOOM   = 0.5;          // relative to auto-fit
+      const MAX_ZOOM   = 5;            // relative to auto-fit
+      const PASS_THRU_MS = 6000;       // long-press pass-through duration (ms)
+      const LONG_PRESS_MS = 600;       // hold time to trigger pass-through
 
-      function numParam(name, def) {
-        const v = new URL(location.href).searchParams.get(name);
-        const n = v === null ? NaN : Number(v);
-        return Number.isFinite(n) && n > 0 ? n : def;
+      // ---------- Elements ----------
+      const stage   = document.getElementById('stage');
+      const content = document.getElementById('content');
+      const iframe  = document.getElementById('app');
+
+      // Set base dimensions
+      document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
+
+      // ---------- State ----------
+      let fit = 1;          // auto-fit scale to make base width fit the viewport width
+      let zoom = 1;         // user zoom multiplier (pinch)
+      let tx = 0, ty = 0;   // translation (pan)
+      let pointers = new Map(); // pointerId -> {x,y}
+      let lastPan = null;       // last point for 1-finger pan
+      let startDist = 0;        // pinch start distance
+      let startZoom = 1;        // zoom at pinch start
+      let lastScaleForAnchor = 1;
+      let passThrough = false;       // if true, let touches hit the iframe
+      let passTimer = null;
+      let longPressTimer = null;
+
+      // ---------- Helpers ----------
+      function viewportSize() {
+        const w = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+        const h = Math.min(window.innerHeight, document.documentElement.clientHeight || window.innerHeight);
+        return { w, h };
       }
 
-      function fit() {
-        const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
-        const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on phones
+      function computeAutoFit() {
+        const { w, h } = viewportSize();
+        const fitByWidth = w / BASE_WIDTH;
+        // Set iframe height so that, at "fit" scale, visible height fills viewport
+        const baseHeight = Math.round(h / Math.min(1, fitByWidth));
+        iframe.style.height = baseHeight + 'px';
+        document.documentElement.style.setProperty('--baseh', baseHeight + 'px');
+        // Fit should never exceed 1 (no upscaling on desktop)
+        return Math.min(1, fitByWidth);
+      }
 
-        if (scale < 0.999) {
-          document.body.classList.add('mobile');
-          document.documentElement.style.setProperty('--scale', scale.toFixed(4));
-          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
-        } else {
-          document.body.classList.remove('mobile');
-          document.documentElement.style.setProperty('--scale', '1');
-          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
+      function applyTransform() {
+        const s = fit * zoom;
+        content.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+      }
+
+      function clamp(val, lo, hi) {
+        return Math.max(lo, Math.min(hi, val));
+      }
+
+      function distance(p1, p2) {
+        const dx = p2.x - p1.x, dy = p2.y - p1.y;
+        return Math.hypot(dx, dy);
+      }
+
+      function midpoint(p1, p2) {
+        return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      }
+
+      function toNumber(v) { return typeof v === 'number' && isFinite(v); }
+
+      function startPassThrough() {
+        // Temporarily allow direct interaction with the iframe (no gesture handling)
+        passThrough = true;
+        stage.style.pointerEvents = 'none';
+        clearTimeout(passTimer);
+        passTimer = setTimeout(stopPassThrough, PASS_THRU_MS);
+      }
+
+      function stopPassThrough() {
+        passThrough = false;
+        stage.style.pointerEvents = 'auto';
+      }
+
+      function resetView() {
+        zoom = 1; tx = 0; ty = 0;
+        applyTransform();
+      }
+
+      function onResize() {
+        fit = computeAutoFit(); // recompute fit for new viewport
+        applyTransform();
+      }
+
+      // ---------- Gesture Handling (Pointer Events with Touch fallback) ----------
+      function pointerDown(e) {
+        if (e.pointerType !== 'touch') return;
+        if (passThrough) return; // let iframe handle it
+
+        stage.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (pointers.size === 1) {
+          // Single finger: start pan and also arm long-press to enable pass-through
+          lastPan = { x: e.clientX, y: e.clientY };
+          clearTimeout(longPressTimer);
+          longPressTimer = setTimeout(() => {
+            // Long-press -> temporarily allow interacting directly with the iframe
+            startPassThrough();
+          }, LONG_PRESS_MS);
+        } else if (pointers.size === 2) {
+          clearTimeout(longPressTimer);
+          const [p1, p2] = Array.from(pointers.values());
+          startDist = distance(p1, p2);
+          startZoom = zoom;
+          lastScaleForAnchor = fit * startZoom; // previous absolute scale
         }
       }
 
+      function pointerMove(e) {
+        if (e.pointerType !== 'touch') return;
+        if (passThrough) return;
+
+        if (!pointers.has(e.pointerId)) return;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (pointers.size === 1 && lastPan) {
+          // Pan
+          const p = pointers.get(e.pointerId);
+          const dx = p.x - lastPan.x;
+          const dy = p.y - lastPan.y;
+          // If finger moved, cancel long-press
+          if (Math.abs(dx) + Math.abs(dy) > 6) {
+            clearTimeout(longPressTimer);
+          }
+          tx += dx; ty += dy;
+          lastPan = { x: p.x, y: p.y };
+          applyTransform();
+        } else if (pointers.size === 2) {
+          // Pinch zoom with anchor at midpoint
+          const [p1, p2] = Array.from(pointers.values());
+          const mp = midpoint(p1, p2);
+          const dist = distance(p1, p2);
+          if (startDist > 0 && toNumber(dist)) {
+            const raw = startZoom * (dist / startDist);
+            zoom = clamp(raw, MIN_ZOOM, MAX_ZOOM);
+
+            // Keep the midpoint stable while scaling:
+            const newScale = fit * zoom;
+            const oldScale = lastScaleForAnchor;
+            if (oldScale > 0) {
+              tx = mp.x - (mp.x - tx) * (newScale / oldScale);
+              ty = mp.y - (mp.y - ty) * (newScale / oldScale);
+              lastScaleForAnchor = newScale;
+            }
+            applyTransform();
+          }
+        }
+      }
+
+      function pointerUp(e) {
+        if (e.pointerType !== 'touch') return;
+        if (passThrough) return;
+
+        stage.releasePointerCapture(e.pointerId);
+        pointers.delete(e.pointerId);
+        lastPan = null;
+        clearTimeout(longPressTimer);
+
+        if (pointers.size < 2) {
+          startDist = 0;
+        }
+      }
+
+      // Double-tap to reset
+      let lastTap = 0;
+      function onTouchEndForDoubleTap(ev) {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+          resetView();
+        }
+        lastTap = now;
+      }
+
+      // Fallback touch listeners (in case Pointer Events are unavailable)
+      function attachFallbackTouch() {
+        // If browser lacks Pointer Events, basic double-tap reset still works.
+        stage.addEventListener('touchend', onTouchEndForDoubleTap, { passive: true });
+      }
+
+      // ---------- Init ----------
       function init() {
-        fit();
-        document.getElementById('app').src = GAS_URL;
+        fit = computeAutoFit();
+        applyTransform();
+
+        // Pointer Events
+        stage.addEventListener('pointerdown', pointerDown, { passive: false });
+        stage.addEventListener('pointermove', pointerMove, { passive: false });
+        stage.addEventListener('pointerup', pointerUp, { passive: false });
+        stage.addEventListener('pointercancel', pointerUp, { passive: false });
+
+        // Fallbacks
+        if (!window.PointerEvent) attachFallbackTouch();
+
+        window.addEventListener('resize', onResize, { passive: true });
+        window.addEventListener('orientationchange', onResize, { passive: true });
       }
 
       document.addEventListener('DOMContentLoaded', init, { passive: true });
-      window.addEventListener('resize', fit, { passive: true });
-      window.addEventListener('orientationchange', fit, { passive: true });
     })();
   </script>
-</head>
-<body>
-  <div class="wrap">
-    <iframe id="app" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
-  </div>
 </body>
 </html>
