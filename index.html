@@ -29,31 +29,36 @@
       overflow: auto;
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
     /* Virtual desktop width (helps desktop-style tables fit on phones) */
-    :root { --basew: 1080px; --scale: 1; }
+    :root { --basew: 1024px; --scale: 1; }
 
     /* Iframe defaults (desktop) */
     #app {
       position: absolute;
       top: 0; left: 0;
       width: 100vw;
-      height: 100dvh;
+      height: 100dvh;   /* fallback */
+      height: 100svh;   /* better on mobile toolbars/safe areas */
       border: 0;
       background: transparent;
       display: block;
       /* Important: let gestures pass to the browser */
       touch-action: pinch-zoom pan-x pan-y;
+      backface-visibility: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     /* On narrow screens, scale the iframe down to fit width,
        but still allow pinch-zoom over it. */
     body.mobile #app {
       transform-origin: top left;
-      transform: scale(var(--scale));
-      width: var(--basew);                  /* unscaled width */
-      height: calc(100dvh / var(--scale));  /* fills viewport after scaling */
+      transform: translateZ(0) scale(var(--scale));
+      width: var(--basew);                    /* unscaled width */
+      height: calc(100svh / var(--scale));    /* fills viewport after scaling */
       will-change: transform;
     }
 
@@ -62,9 +67,9 @@
     #gestureShield {
       position: fixed;
       inset: 0;
-      z-index: 2147483647;       /* above iframe */
+      z-index: 2147483647;    /* above iframe */
       background: transparent;
-      pointer-events: none;      /* taps/scrolls pass through by default */
+      pointer-events: none;   /* taps/scrolls pass through by default */
       touch-action: pinch-zoom pan-x pan-y;
     }
   </style>
@@ -86,12 +91,14 @@
 
   <script>
     (function () {
-      // 👉 Your Apps Script Web App URL
+      // 👉 Your Apps Script Web App URL (kept exactly as you sent)
       const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
 
-      // Defaults: smaller base width + a small scale boost = bigger on phone
-      const DEFAULT_BASE_WIDTH = 1080;  // was 1200
-      const DEFAULT_SCALE_BOOST = 1.12; // 12% bigger by default
+      // Defaults: a bit smaller base width + gentle boost = bigger, but still neat
+      const DEFAULT_BASE_WIDTH = 1024;  // was 1080
+      const DEFAULT_SCALE_BOOST = 1.06; // softer than before to keep layout nice
+      const MIN_EFFECTIVE_SCALE = 0.90; // don’t let it get too tiny
+      const MAX_EFFECTIVE_SCALE = 0.985; // avoid near-1 overflow/jank on some phones
 
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -99,19 +106,29 @@
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
-      // Fit the iframe to screen (scale down for phones, with a boost for readability)
+      // Fit the iframe to screen (scale down for phones, with a gentle boost for readability)
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
-        const SCALE_BOOST = numParam('s', DEFAULT_SCALE_BOOST); // e.g. ?s=1.15
+        const BOOST = numParam('s', DEFAULT_SCALE_BOOST);     // override via ?s=1.1
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const raw = vw / BASE_WIDTH;
-        const scale = Math.min(1, raw * SCALE_BOOST); // boost makes content appear bigger
+
+        // raw scale needed to fit BASE_WIDTH, then apply a small readability boost
+        let rawScale = (vw / BASE_WIDTH) * BOOST;
+        rawScale = Math.min(1, rawScale); // never upscale beyond 1
+
+        // Snap scale to device pixel ratio to reduce blur/jitter
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const step = 1 / (dpr * 4); // 0.25px increments
+        let snapped = Math.round(rawScale / step) / step;
+
+        // Clamp to a safe/pleasant range for phone layouts
+        snapped = Math.max(MIN_EFFECTIVE_SCALE, Math.min(MAX_EFFECTIVE_SCALE, snapped));
 
         document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
 
-        if (scale < 0.999) {
+        if (snapped < 0.999) {
           document.body.classList.add('mobile');
-          document.documentElement.style.setProperty('--scale', scale.toFixed(4));
+          document.documentElement.style.setProperty('--scale', snapped.toFixed(4));
         } else {
           document.body.classList.remove('mobile');
           document.documentElement.style.setProperty('--scale', '1');
