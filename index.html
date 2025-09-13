@@ -20,7 +20,7 @@
       /* Allow natural panning/zooming */
       touch-action: pinch-zoom pan-x pan-y;
       overflow: auto;
-      /* Prevent iOS pull-to-refresh / scroll chaining during pinch */
+      /* iOS: stop pull-to-refresh/scroll chaining during pinch */
       overscroll-behavior: none;
     }
     /* Scroll container (so you can pan when zoomed-in) */
@@ -30,7 +30,7 @@
       overflow: auto;
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
-      /* Prevent iOS pull-to-refresh / scroll chaining during pinch */
+      /* iOS: stop pull-to-refresh/scroll chaining during pinch */
       overscroll-behavior: none;
     }
     /* Virtual desktop width (helps desktop-style tables fit on phones) */
@@ -72,7 +72,7 @@
     /* Optional tiny helper label (toggle to debug) */
     #hint { position: fixed; bottom: 8px; left: 8px; opacity: .35; font: 12px/1.2 system-ui, sans-serif; }
 
-    /* iOS pinch safety: when active, iframe ignores taps */
+    /* iOS pinch safety: while pinching, ignore taps in iframe */
     #app.pe-none { pointer-events: none !important; }
   </style>
 </head>
@@ -181,8 +181,6 @@
 
         let suppressUntil = 0;
         function suppressClicksFor(ms) { suppressUntil = Date.now() + ms; }
-
-        // Swallow clicks briefly after pinch so Safari doesn't follow links
         ['click','mouseup','mousedown','touchend'].forEach(type => {
           window.addEventListener(type, (e) => {
             if (Date.now() < suppressUntil) { e.stopImmediatePropagation(); e.preventDefault(); }
@@ -190,23 +188,23 @@
         });
 
         function arm() {
-          shield.style.pointerEvents = 'auto';
-          iframe.classList.add('pe-none');      // ignore taps inside iframe during pinch
-          suppressClicksFor(800);
+          shield.style.pointerEvents = 'auto';   // keep pinch on the page, not inside iframe
+          iframe.classList.add('pe-none');       // ignore taps inside iframe during pinch
+          suppressClicksFor(1000);               // give Safari time to settle
         }
         function disarm() {
-          suppressClicksFor(300);
+          suppressClicksFor(500);
           setTimeout(() => {
             shield.style.pointerEvents = 'none';
             iframe.classList.remove('pe-none');
-          }, 250);
+          }, 300);
         }
 
         // Preferred on Safari
         window.addEventListener('gesturestart', arm, { passive: true });
         window.addEventListener('gestureend', disarm, { passive: true });
 
-        // Fallback (multi-touch detection)
+        // Fallback using touch counts
         window.addEventListener('touchstart', (e) => {
           if ((e.touches?.length || 0) >= 2) arm();
         }, { passive: true, capture: true });
@@ -225,7 +223,7 @@
         window.addEventListener('orientationchange', fit, { passive: true });
         // Enable reliable pinch-zoom
         setupGestureShield();
-        setupIOSPinchSafety();   // iPhone fix (no size/layout changes)
+        setupIOSPinchSafety();   // iPhone fix (no changes to size/format)
       }
       document.addEventListener('DOMContentLoaded', init, { passive: true });
     })();
