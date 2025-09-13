@@ -112,39 +112,51 @@
       // • pointer-events: auto → browser captures gesture for pinch (2+ fingers)
       function setupGestureShield() {
         const shield = document.getElementById('gestureShield');
-
-        let releaseTimer = null;
-        const arm = () => { clearTimeout(releaseTimer); shield.style.pointerEvents = 'auto'; };
-        const disarm = () => { clearTimeout(releaseTimer); shield.style.pointerEvents = 'none'; };
-        const disarmSoon = (ms = 80) => { clearTimeout(releaseTimer); releaseTimer = setTimeout(disarm, ms); };
-
-        // iOS Safari native gesture events (fires on pinch)
-        window.addEventListener('gesturestart',  arm,    { passive: true });
-        window.addEventListener('gesturechange', arm,    { passive: true });
-        window.addEventListener('gestureend',    disarm, { passive: true });
-
-        // Touch fallback (Android + iOS backup)
+        let touchCount = 0;
+        let pointerTouchCount = 0;
+        // Touch Events (iOS/Safari)
         window.addEventListener('touchstart', (e) => {
-          // Arm immediately so a two-finger start over the iframe is captured.
-          arm();
-          (e.touches?.length || 0) >= 2 ? arm() : disarmSoon(80);
+          touchCount = e.touches.length;
+          shield.style.pointerEvents = (touchCount >= 2) ? 'auto' : 'none';
         }, { capture: true, passive: true });
-
         window.addEventListener('touchmove', (e) => {
-          if ((e.touches?.length || 0) >= 2) arm();
+          touchCount = e.touches.length;
+          shield.style.pointerEvents = (touchCount >= 2) ? 'auto' : 'none';
         }, { capture: true, passive: true });
-
-        window.addEventListener('touchend',    disarm, { capture: true, passive: true });
-        window.addEventListener('touchcancel', disarm, { capture: true, passive: true });
-
-        // Desktop trackpad pinch (Ctrl/Cmd + wheel)
-        let wheelTimer = null;
-        window.addEventListener('wheel', (e) => {
-          if (e.ctrlKey) { arm(); clearTimeout(wheelTimer); wheelTimer = setTimeout(disarm, 200); }
+        window.addEventListener('touchend', (e) => {
+          touchCount = e.touches.length;
+          if (touchCount < 2) shield.style.pointerEvents = 'none';
+        }, { capture: true, passive: true });
+        window.addEventListener('touchcancel', () => {
+          touchCount = 0;
+          shield.style.pointerEvents = 'none';
+        }, { capture: true, passive: true });
+        // Pointer Events (Android/Chrome, modern iOS)
+        window.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount++;
+            shield.style.pointerEvents = (pointerTouchCount >= 2) ? 'auto' : 'none';
+          }
+        }, { capture: true, passive: true });
+        window.addEventListener('pointerup', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount = Math.max(0, pointerTouchCount - 1);
+            if (pointerTouchCount < 2) shield.style.pointerEvents = 'none';
+          }
+        }, { capture: true, passive: true });
+        window.addEventListener('pointercancel', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount = 0;
+            shield.style.pointerEvents = 'none';
+          }
+        }, { capture: true, passive: true });
+        // Safari gesture events (extra safety)
+        window.addEventListener('gesturestart', () => {
+          shield.style.pointerEvents = 'auto';
         }, { passive: true });
-
-        // Briefly arm on first paint so an immediate pinch is recognized (iPhone)
-        arm(); setTimeout(disarm, 140);
+        window.addEventListener('gestureend', () => {
+          shield.style.pointerEvents = 'none';
+        }, { passive: true });
       }
       function init() {
         // Load your app
