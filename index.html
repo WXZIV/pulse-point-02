@@ -9,18 +9,18 @@
     html, body { height: 100%; margin: 0; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     body { background: #0b0b0b; }
 
-    /* container */
+    /* Container */
     .wrap {
       position: fixed;
       inset: 0;
-      overflow: hidden; /* avoid scrollbars from scaling math */
+      overflow: hidden;               /* avoid scrollbars from scaling math */
       background: #0b0b0b;
     }
 
-    /* scale variable set by JS; default 1 so page always shows */
+    /* Scale variable; JS updates this. Default 1 so it still shows if JS is delayed. */
     :root { --scale: 1; }
 
-    /* scaled iframe (we never touch your GAS page) */
+    /* We scale the iframe itself (we do NOT modify the GAS page). */
     .frame {
       position: absolute;
       top: 0; left: 0;
@@ -29,25 +29,41 @@
       background: transparent;
       transform-origin: top left;
       transform: scale(var(--scale));
-      /* ensure it fills the viewport even before JS runs */
+      /* Always fill the viewport even before JS runs */
       width: calc(100vw / var(--scale));
-      height: calc(100vh / var(--scale));
-      height: calc(100dvh / var(--scale)); /* modern browsers */
+      height: calc(100dvh / var(--scale));
     }
   </style>
 
   <script>
     (function () {
-      // Tune this to your GAS mobile design width (try 430–520)
-      const BASE_WIDTH = 520;
+      // --- CONFIG ------------------------------------------------------------
+      // You can override via URL: ?w=600  (bigger w => smaller UI)
+      const DEFAULT_BASE_WIDTH = 768; // very safe default so it won't look huge
+      const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
+      // -----------------------------------------------------------------------
+
+      function getParam(name, def) {
+        const u = new URL(window.location.href);
+        const v = u.searchParams.get(name);
+        const n = v !== null ? Number(v) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : def;
+      }
 
       function fit() {
+        const BASE_WIDTH = getParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH); // only scale DOWN
+        // Only scale DOWN (never up)
+        const scale = Math.min(1, vw / BASE_WIDTH);
         document.documentElement.style.setProperty('--scale', scale.toFixed(4));
       }
 
-      document.addEventListener('DOMContentLoaded', fit, { passive: true });
+      function init() {
+        fit(); // size before load so it doesn't flash too big
+        document.getElementById('app').src = GAS_URL;
+      }
+
+      document.addEventListener('DOMContentLoaded', init, { passive: true });
       window.addEventListener('resize', fit, { passive: true });
       window.addEventListener('orientationchange', fit, { passive: true });
     })();
@@ -55,13 +71,7 @@
 </head>
 <body>
   <div class="wrap">
-    <iframe
-      class="frame"
-      src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
-      loading="eager"
-      referrerpolicy="no-referrer"
-      allowfullscreen>
-    </iframe>
+    <iframe id="app" class="frame" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
   </div>
 
   <noscript>
