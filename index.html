@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Native zoom enabled -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
@@ -10,43 +9,40 @@
   <title>Pulse Point</title>
 
   <style>
-    /* Let the browser handle zoom & pan; avoid double scrollbars */
+    :root { --rail: 16px; --scale: 1; --basew: 1152px; }
+
+    /* Let the browser handle zoom & pan; we scroll only the .wrap */
     html, body {
       height: 100%;
       margin: 0;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
       touch-action: pinch-zoom pan-x pan-y;
-      overflow: hidden;                /* we scroll .wrap instead */
+      overflow: hidden;                 /* avoid double scrollbars */
       background: #0b0b0b;
     }
 
-    /* Fullscreen scroll surface so 1-finger pan works even when zoomed */
+    /* Fullscreen scroll area so 1-finger pan works even when zoomed */
     .wrap {
       position: absolute;
       inset: 0;
-      overflow: auto;                  /* both axes */
+      overflow: auto;                   /* both axes */
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
 
-    /* Optional virtual desktop width for small phones (natural horizontal scroll) */
-    :root { --scale: 1; --basew: 1152px; }
-
-    /* Iframe fills viewport */
+    /* Iframe fills viewport (desktop) */
     #app {
       position: absolute;
-      top: 0; left: 0;
+      inset: 0;
       border: 0;
-      display: block;
       width: 100vw;
       height: 100dvh;
       background: transparent;
       touch-action: pinch-zoom pan-x pan-y;
     }
 
-    /* On narrow phones: make iframe wider than viewport but scale to fit.
-       That gives horizontal scroll in .wrap while keeping full view initially. */
+    /* Optional: “virtual desktop width” for very small phones (gives natural L/R scroll) */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
@@ -55,32 +51,34 @@
       will-change: transform;
     }
 
-    /* --- Pinch Rail (GitHub-only fix) ---
-       A tiny, nearly invisible strip at the very top that ALWAYS captures touches
-       and allows native pinch-zoom to start, even over a cross-origin iframe. */
-    #pinchRail {
+    /* -------- Pinch Rails (GitHub-only workaround) --------
+       These belong to THIS page, not the iframe, so native pinch can start.
+       Non-zero alpha makes them touchable on iOS but visually invisible. */
+    .rail {
       position: fixed;
-      left: 0; right: 0; top: 0;
-      height: 12px;                    /* thin edge; increase if you want easier target */
       z-index: 2147483647;
-      background: rgba(0,0,0,0.001);   /* effectively invisible but touchable (iOS) */
+      background: rgba(0,0,0,0.001);    /* invisible but touchable */
       touch-action: pinch-zoom pan-x pan-y;
-      pointer-events: auto;            /* always active so first finger is captured */
+      pointer-events: auto;
     }
+    /* Top & bottom rails (full width) */
+    #railTop    { left: 0; right: 0; top: 0;    height: var(--rail); }
+    #railBottom { left: 0; right: 0; bottom: 0; height: var(--rail); }
+    /* Left & right rails (full height) */
+    #railLeft   { top: 0; bottom: 0; left: 0;   width: var(--rail); }
+    #railRight  { top: 0; bottom: 0; right: 0;  width: var(--rail); }
 
-    /* Optional helper: a 12px bottom rail too (comment out if not needed) */
-    /* #pinchRailBottom {
-      position: fixed; left: 0; right: 0; bottom: 0; height: 12px;
-      z-index: 2147483647; background: rgba(0,0,0,0.001);
-      touch-action: pinch-zoom pan-x pan-y; pointer-events: auto;
-    } */
+    /* (Optional) make rails bigger on extra-small phones */
+    @media (max-width: 360px) {
+      :root { --rail: 20px; }
+    }
   </style>
 
   <script>
     (function () {
       // ===== CONFIG =====
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
-      const DEFAULT_BASE_WIDTH = 1152; // change via ?w=1280 if desired
+      const DEFAULT_BASE_WIDTH = 1152;   // change via ?w=1280 if you like
       // ===================
 
       function qpNumber(name, def) {
@@ -92,7 +90,7 @@
       function fit() {
         const BASE_WIDTH = qpNumber('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on narrow screens
+        const scale = Math.min(1, vw / BASE_WIDTH); // downscale only on narrow screens
         if (scale < 0.999) {
           document.body.classList.add('mobile');
           document.documentElement.style.setProperty('--scale', scale.toFixed(4));
@@ -105,12 +103,8 @@
       }
 
       function init() {
-        fit(); // set initial scale before iframe load to avoid flash
+        fit();
         document.getElementById('app').src = GAS_URL;
-
-        // No JS needed for the rail itself—it's a native pinch surface.
-        // Tip: start pinch with one finger on the top edge (rail),
-        // the other finger can be anywhere (even on the table).
       }
 
       document.addEventListener('DOMContentLoaded', init, { passive: true });
@@ -120,9 +114,12 @@
   </script>
 </head>
 <body>
-  <!-- Thin, invisible pinch surface to start native zoom even over the iframe -->
-  <div id="pinchRail" aria-hidden="true"></div>
-  <!-- <div id="pinchRailBottom" aria-hidden="true"></div> -->
+  <!-- Pinch rails: start your pinch with one finger on any edge (top/bottom/left/right).
+       The second finger can be anywhere—even over the table. -->
+  <div id="railTop"    class="rail" aria-hidden="true"></div>
+  <div id="railBottom" class="rail" aria-hidden="true"></div>
+  <div id="railLeft"   class="rail" aria-hidden="true"></div>
+  <div id="railRight"  class="rail" aria-hidden="true"></div>
 
   <div class="wrap">
     <iframe id="app" title="Pulse Point App"
