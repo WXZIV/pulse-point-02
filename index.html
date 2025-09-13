@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- keep native pinch-zoom enabled everywhere -->
+  <!-- Keep native pinch-zoom on all devices -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
                  user-scalable=yes, viewport-fit=cover" />
-  <title>Pulse Point (GitHub Wrapper)</title>
+  <title>Pulse Point</title>
   <style>
     html, body {
       height: 100%;
@@ -28,15 +28,16 @@
       padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    /* Slightly larger virtual desktop => smaller, tighter UI on phones */
-    :root { --basew: 1360px; --scale: 1; }
+    /* Larger virtual desktop => smaller UI on phones */
+    :root { --basew: 1440px; --scale: 1; }
 
+    /* Iframe fills the window (desktop = no transform) */
     #app {
       position: absolute;
       top: 0; left: 0;
       width: 100vw;
       height: 100dvh;
-      height: 100svh; /* better on mobile toolbars */
+      height: 100svh;
       border: 0;
       background: transparent;
       display: block;
@@ -46,23 +47,23 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Phone: scale iframe so it fits width, but you can still pinch-zoom */
+    /* Phone: scale down to fit width, but still allow pinch-zoom */
     body.mobile #app {
       transform-origin: top left;
       transform: translateZ(0) scale(var(--scale));
-      width: var(--basew);                     /* unscaled width */
-      height: calc(100svh / var(--scale));     /* fills viewport after scaling */
+      width: var(--basew);                  /* unscaled width */
+      height: calc(100svh / var(--scale));  /* fills viewport after scaling */
       will-change: transform;
     }
 
-    /* Overlay that guarantees pinch can start over the iframe/table */
+    /* Overlay so a two-finger pinch can start over the iframe/table */
     #gestureShield {
       position: fixed;
       inset: 0;
       z-index: 2147483647;
       background: transparent;
-      pointer-events: auto;                    /* armed by default */
-      touch-action: pinch-zoom pan-x pan-y;    /* let the browser handle it */
+      pointer-events: auto;                 /* armed by default */
+      touch-action: pinch-zoom pan-x pan-y; /* let browser handle gestures */
       -webkit-user-select: none; user-select: none;
     }
   </style>
@@ -79,19 +80,18 @@
     </iframe>
   </div>
 
-  <!-- becomes touchable only while deciding pinch vs single touch -->
   <div id="gestureShield" aria-hidden="true"></div>
 
   <script>
     (function () {
-      // Your Apps Script URL
+      // Your Apps Script Web App URL
       const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
 
-      // Tuning: smaller text on phones without breaking layout
-      const DEFAULT_BASE_WIDTH = 1360; // ↑ bigger base => smaller UI on phone
-      const DEFAULT_SCALE_BOOST = 1.00; // no extra boost
-      const MIN_EFFECTIVE_SCALE = 0.86;
-      const MAX_EFFECTIVE_SCALE = 0.995;
+      // Tuning: smaller text/controls on phones
+      const DEFAULT_BASE_WIDTH   = 1440; // ↑ bigger base => smaller UI on phone
+      const DEFAULT_SCALE_BOOST  = 1.00; // no extra boost
+      const MIN_EFFECTIVE_SCALE  = 0.30; // allow real downscaling if needed
+      const MAX_EFFECTIVE_SCALE  = 0.995;
 
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -99,18 +99,21 @@
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
+      // Fit iframe to screen (scale down on phones)
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
-        const BOOST = numParam('s', DEFAULT_SCALE_BOOST);
+        const BOOST      = numParam('s', DEFAULT_SCALE_BOOST);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
 
         let rawScale = (vw / BASE_WIDTH) * BOOST;
-        rawScale = Math.min(1, rawScale);
+        rawScale = Math.min(1, rawScale); // never upscale
 
-        // Snap to DPR steps to reduce blur
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        // Snap to DPR steps to avoid blur
+        const dpr  = Math.max(1, window.devicePixelRatio || 1);
         const step = 1 / (dpr * 4);
         let snapped = Math.round(rawScale / step) / step;
+
+        // Allow real shrinking; cap just below 1
         snapped = Math.max(MIN_EFFECTIVE_SCALE, Math.min(MAX_EFFECTIVE_SCALE, snapped));
 
         document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
@@ -138,22 +141,24 @@
           shield.style.pointerEvents = 'auto';
         }
 
-        // iOS Safari gesture events
-        window.addEventListener('gesturestart', keepArmed, { passive: true });
+        // iOS Safari native gesture events
+        window.addEventListener('gesturestart',  keepArmed, { passive: true });
         window.addEventListener('gesturechange', keepArmed, { passive: true });
-        window.addEventListener('gestureend', () => { shield.style.pointerEvents = 'none'; }, { passive: true });
+        window.addEventListener('gestureend',   () => { shield.style.pointerEvents = 'none'; }, { passive: true });
 
-        // Touch fallback (Android + some iOS)
+        // Touch fallback (Android + some iOS builds)
         window.addEventListener('touchstart', (e) => {
           const n = e.touches ? e.touches.length : 0;
           if (n >= 2) keepArmed(); else releaseSoonForSingle();
         }, { capture: true, passive: true });
+
         window.addEventListener('touchmove', (e) => {
           const n = e.touches ? e.touches.length : 0;
           if (n >= 2) keepArmed();
         }, { capture: true, passive: true });
-        window.addEventListener('touchend', () => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
-        window.addEventListener('touchcancel', () => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
+
+        window.addEventListener('touchend',   () => { shield.style.pointerEvents = 'none'; },   { capture: true, passive: true });
+        window.addEventListener('touchcancel',() => { shield.style.pointerEvents = 'none'; },   { capture: true, passive: true });
 
         // Trackpad pinch (ctrl+wheel) on desktop
         let wheelTimer = null;
@@ -164,6 +169,9 @@
             wheelTimer = setTimeout(() => { shield.style.pointerEvents = 'none'; }, 200);
           }
         }, { passive: true });
+
+        // Let first tap/scroll through after initial paint
+        setTimeout(() => { shield.style.pointerEvents = 'none'; }, 0);
       }
 
       function init() {
