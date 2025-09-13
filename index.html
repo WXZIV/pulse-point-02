@@ -32,7 +32,7 @@
     }
 
     /* Virtual desktop width (helps desktop-style tables fit on phones) */
-    :root { --basew: 1080px; --scale: 1; }
+    :root { --basew: 1200px; --scale: 1; }
 
     /* Iframe defaults (desktop) */
     #app {
@@ -64,9 +64,13 @@
       inset: 0;
       z-index: 2147483647;       /* above iframe */
       background: transparent;
-      pointer-events: none;      /* taps/scrolls pass through by default */
+      pointer-events: none;      /* clicks/taps pass through by default */
+      /* Tell the browser it's OK to pinch and pan here */
       touch-action: pinch-zoom pan-x pan-y;
     }
+
+    /* Optional tiny helper label (toggle to debug) */
+    #hint { position: fixed; bottom: 8px; left: 8px; opacity: .35; font: 12px/1.2 system-ui, sans-serif; }
   </style>
 </head>
 <body>
@@ -83,15 +87,15 @@
 
   <!-- Overlay that activates only while pinching -->
   <div id="gestureShield" aria-hidden="true"></div>
+  <!-- <div id="hint">1-finger: scroll & tap • 2-finger: pinch-zoom</div> -->
 
   <script>
     (function () {
       // 👉 Your Apps Script Web App URL
-      const GAS_URL = "https://script.google.com/macros/s/AKfycbyQf1Hi15rMeyfPpmEX1Mh5lg0gKECRQrVb7HAnqlPJc_GBbcFnOaOx1x0H9ib6A9bA/exec";
+      const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
 
-      // Defaults: smaller base width + a small scale boost = bigger on phone
-      const DEFAULT_BASE_WIDTH = 1080;  // was 1200
-      const DEFAULT_SCALE_BOOST = 1.12; // 12% bigger by default
+      // You can change the virtual desktop width via ?w= in the URL if you like
+      const DEFAULT_BASE_WIDTH = 1200;
 
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -99,13 +103,11 @@
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
-      // Fit the iframe to screen (scale down for phones, with a boost for readability)
+      // Fit the iframe to screen (scale down for phones)
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
-        const SCALE_BOOST = numParam('s', DEFAULT_SCALE_BOOST); // e.g. ?s=1.15
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const raw = vw / BASE_WIDTH;
-        const scale = Math.min(1, raw * SCALE_BOOST); // boost makes content appear bigger
+        const scale = Math.min(1, vw / BASE_WIDTH); // only downscale on small screens
 
         document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
 
@@ -119,6 +121,9 @@
       }
 
       // Make pinch-zoom always work—even when you start over the iframe/table.
+      // Logic:
+      //  • pointer-events: none  → taps/scrolls go through to iframe (1 finger)
+      //  • pointer-events: auto  → browser captures gesture for pinch (2+ fingers)
       function setupGestureShield() {
         const shield = document.getElementById('gestureShield');
         let touchCount = 0;
