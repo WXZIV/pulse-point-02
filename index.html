@@ -48,7 +48,7 @@
       height: calc(100dvh / var(--scale)); /* fills viewport after scaling */
       will-change: transform;
     }
-    /* Transparent overlay for pinch gestures */
+    /* Transparent overlay for capturing pinch gestures */
     #pinchShield {
       position: fixed;
       inset: 0;
@@ -56,20 +56,7 @@
       background: transparent;
       touch-action: pinch-zoom pan-x pan-y; /* let browser handle pinch/pan */
       display: block;
-      pointer-events: none; /* default: interaction mode */
-    }
-    /* Mode indicator */
-    #modeIndicator {
-      position: fixed;
-      bottom: 10px;
-      right: 10px;
-      z-index: 2147483648; /* above shield */
-      padding: 8px 12px;
-      background: rgba(255, 255, 255, 0.8);
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-      opacity: 0.7;
+      pointer-events: none; /* default: pass through */
     }
   </style>
   <script>
@@ -95,39 +82,63 @@
           document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
         }
       }
-      function setupDoubleTapToggle() {
+      // Auto pinch overlay: toggle pointer-events for multi-touch
+      function setupAutoPinchOverlay() {
         const shield = document.getElementById('pinchShield');
-        const indicator = document.getElementById('modeIndicator');
-        let lastTapTime = 0;
-        let isInteractionMode = true; // default to interaction
+        let touches = 0, pointers = 0;
+        const enableCapture = () => { shield.style.pointerEvents = 'auto'; };
+        const disableCapture = () => { shield.style.pointerEvents = 'none'; };
 
-        function updateMode() {
-          if (isInteractionMode) {
-            shield.style.pointerEvents = 'none';
-            indicator.textContent = 'Interaction Mode (Double-tap to switch)';
-          } else {
-            shield.style.pointerEvents = 'auto';
-            indicator.textContent = 'Zoom Mode (Double-tap to switch)';
-          }
-        }
-
+        // Touch Events (Android + iOS)
+        window.addEventListener('touchstart', (e) => {
+          touches = e.touches.length;
+          if (touches >= 2) enableCapture();
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+          touches = e.touches.length;
+          if (touches >= 2) enableCapture();
+        }, { passive: true });
         window.addEventListener('touchend', (e) => {
-          if (e.touches.length === 0) { // end of a tap
-            const now = Date.now();
-            if (now - lastTapTime < 300) {
-              isInteractionMode = !isInteractionMode;
-              updateMode();
-            }
-            lastTapTime = now;
+          touches = e.touches.length;
+          if (touches < 2) disableCapture();
+        }, { passive: true });
+        window.addEventListener('touchcancel', () => {
+          touches = 0;
+          disableCapture();
+        }, { passive: true });
+
+        // Pointer Events (Chrome/Android + some others)
+        window.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'touch') {
+            pointers++;
+            if (pointers >= 2) enableCapture();
+          }
+        }, { passive: true });
+        window.addEventListener('pointermove', (e) => {
+          if (e.pointerType === 'touch' && pointers >= 2) enableCapture();
+        }, { passive: true });
+        window.addEventListener('pointerup', (e) => {
+          if (e.pointerType === 'touch') {
+            pointers = Math.max(0, pointers - 1);
+            if (pointers < 2) disableCapture();
+          }
+        }, { passive: true });
+        window.addEventListener('pointercancel', (e) => {
+          if (e.pointerType === 'touch') {
+            pointers = Math.max(0, pointers - 1);
+            if (pointers < 2) disableCapture();
           }
         }, { passive: true });
 
-        updateMode(); // initial
+        // Safari-specific: gesture events
+        window.addEventListener('gesturestart', enableCapture, { passive: true });
+        window.addEventListener('gesturechange', enableCapture, { passive: true });
+        ['gestureend','gesturecancel'].forEach(ev => window.addEventListener(ev, disableCapture, { passive: true }));
       }
       function init() {
         fit(); // size before load to avoid flash
         document.getElementById('app').src = GAS_URL;
-        setupDoubleTapToggle();
+        setupAutoPinchOverlay();
       }
       document.addEventListener('DOMContentLoaded', init, { passive: true });
       window.addEventListener('resize', fit, { passive: true });
@@ -141,7 +152,5 @@
   </div>
   <!-- Transparent pinch overlay -->
   <div id="pinchShield" aria-hidden="true"></div>
-  <!-- Mode indicator -->
-  <div id="modeIndicator"></div>
 </body>
 </html>
