@@ -7,7 +7,6 @@
                  minimum-scale=0.25, maximum-scale=10,
                  user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
-
   <style>
     html, body {
       height: 100%;
@@ -15,69 +14,44 @@
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
       touch-action: pinch-zoom pan-x pan-y; /* allow native gestures */
-      overflow: auto;                       /* pan after zoom */
+      overflow: auto; /* pan after zoom */
       background: #0b0b0b;
     }
-
     .wrap {
       position: absolute; inset: 0;
       overflow: auto; -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
-
-    :root { --scale: 1; --basew: 1152px; }  /* phone virtual desktop width */
-
-    /* Desktop: fill window, no transform */
+    /* Desktop: fill window */
     #app {
       position: absolute; top: 0; left: 0;
       border: 0; display: block;
       background: transparent;
       width: 100vw; height: 100dvh;
-      transform: none;
       touch-action: pinch-zoom pan-x pan-y; /* allow gestures over iframe element */
     }
-
-    /* Phone: emulate desktop width, then scale down to fit */
-    body.mobile #app {
-      transform-origin: top left;
-      transform: scale(var(--scale));
-      width: var(--basew);
-      height: calc(100dvh / var(--scale));
-      will-change: transform;
-    }
   </style>
-
   <script>
     (function () {
       const DEFAULT_BASE_WIDTH = 1152; // tweak with ?w=1080 (bigger) or ?w=1280 (smaller)
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
-
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
         const n = v === null ? NaN : Number(v);
         return Number.isFinite(n) && n > 0 ? n : def;
       }
-
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on phones
-        if (scale < 0.999) {
-          document.body.classList.add('mobile');
-          document.documentElement.style.setProperty('--scale', scale.toFixed(4));
-          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
-        } else {
-          document.body.classList.remove('mobile');
-          document.documentElement.style.setProperty('--scale', '1');
-          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
+        if (vw < BASE_WIDTH) {
+          document.querySelector('meta[name="viewport"]').content =
+            `width=${BASE_WIDTH}, minimum-scale=0.25, maximum-scale=10, user-scalable=yes, viewport-fit=cover`;
         }
       }
-
       document.addEventListener('DOMContentLoaded', () => {
         fit();
         document.getElementById('app').src = GAS_URL;
       }, { passive: true });
-
       window.addEventListener('resize', fit, { passive: true });
       window.addEventListener('orientationchange', fit, { passive: true });
     })();
