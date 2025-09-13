@@ -34,8 +34,8 @@
       position: absolute;
       top: 0; left: 0;
       width: 100vw;
-      height: 100dvh;
-      height: 100svh;      /* better on iOS */
+      height: 100dvh;   /* fallback */
+      height: 100svh;   /* better on mobile */
       border: 0;
       background: transparent;
       display: block;
@@ -45,11 +45,12 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
+    /* Phone mode: scale to fit width */
     body.mobile #app {
       transform-origin: top left;
       transform: translateZ(0) scale(var(--scale));
-      width: var(--basew);
-      height: calc(100svh / var(--scale));
+      width: var(--basew);                    /* unscaled width */
+      height: calc(100svh / var(--scale));    /* fills viewport after scaling */
       will-change: transform;
     }
 
@@ -82,10 +83,10 @@
 
   <script>
     (function () {
-      // Your Apps Script Web App URL (kept as in your file)
+      // Your Apps Script Web App URL (as in your last file)
       const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
 
-      // Default virtual desktop width. Change via ?w= (smaller w => appears bigger).
+      // Default virtual desktop width. Change via ?w= (smaller w => appears bigger on phones).
       const DEFAULT_BASE_WIDTH = 1080;
 
       function numParam(name, def) {
@@ -94,32 +95,35 @@
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
-      // Fit to screen width exactly (no “boost” so it never overflows)
+      // Fit logic:
+      // - Desktop (viewport >= base width): NO scaling, iframe fills the whole screen.
+      // - Phone  (viewport  < base width): scale down to fit width (no boost).
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
 
-        // Scale that exactly fits the width
-        const raw = Math.min(1, vw / BASE_WIDTH);
-
-        // DPR-snapped (rounded *down* so we never exceed raw and cause overflow)
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const step = 1 / (dpr * 4); // ~0.25 CSS px increments
-        let snapped = Math.floor(raw / step) * step;
-        if (snapped <= 0) snapped = raw; // safety
-
         document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
 
-        if (snapped < 0.999) {
-          document.body.classList.add('mobile');
-          document.documentElement.style.setProperty('--scale', snapped.toFixed(4));
-        } else {
+        if (vw >= BASE_WIDTH) {
+          // Desktop or wide tablet: full-size iframe, no transform
           document.body.classList.remove('mobile');
           document.documentElement.style.setProperty('--scale', '1');
+          return;
         }
+
+        // Phone: exact scale to fit width
+        let scale = vw / BASE_WIDTH; // 0 < scale < 1
+
+        // Snap scale to device pixel ratio steps to reduce blur/jitter
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const step = 1 / (dpr * 4); // ~0.25 CSS px increments
+        scale = Math.max(0.5, Math.floor(scale / step) * step); // keep sensible lower bound
+
+        document.body.classList.add('mobile');
+        document.documentElement.style.setProperty('--scale', scale.toFixed(4));
       }
 
-      // Ensure pinch-zoom always works on iOS + Android
+      // Ensure pinch-zoom always works on iOS + Android (inside iframe/table too)
       function setupGestureShield() {
         const shield = document.getElementById('gestureShield');
         let touchCount = 0;
