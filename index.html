@@ -4,38 +4,212 @@
   <meta charset="utf-8" />
   <meta name="viewport"
         content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-  <title>Apps Script Embed</title>
+  <title>Apps Script Data Viewer</title>
   <style>
-    /* Full-viewport on mobile (no layout changes) */
-    html, body { height: 100%; margin: 0; }
-    .frame {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100dvh; /* mobile-safe unit */
-      border: 0;
-      background: #0000;
+    :root { color-scheme: light dark; }
+    body { margin: 0; font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    header { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+    .wrap { padding: 12px 16px; }
+    .muted { opacity: .7; }
+    .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; }
+    button {
+      border: 1px solid #e5e7eb; background: #f9fafb; padding: 6px 10px; border-radius: 8px; cursor: pointer;
     }
-    /* Optional: dark page bg behind the frame */
-    body { background: #0b0b0b; }
+    button:active { transform: translateY(1px); }
+    .status { font-size: 12px; }
+    .table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 10px; }
+    table { border-collapse: collapse; width: 100%; min-width: 560px; }
+    thead th {
+      position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e5e7eb;
+      text-align: left; padding: 10px; font-weight: 600; white-space: nowrap;
+    }
+    tbody td { border-top: 1px solid #f1f5f9; padding: 10px; vertical-align: top; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    pre { max-height: 50vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
+    @media (prefers-color-scheme: dark) {
+      header, .table-wrap, pre { border-color: #334155; }
+      thead th { background: #0b1220; }
+      table, body { background: #0b0f19; color: #e5e7eb; }
+      button { background: #111827; border-color: #334155; color: #e5e7eb; }
+    }
   </style>
 </head>
 <body>
-  <!-- Your GAS web app, shown 1:1 with no changes -->
-  <iframe
-    class="frame"
-    src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
-    loading="eager"
-    referrerpolicy="no-referrer">
-  </iframe>
+  <header>
+    <div><strong>Apps Script Data Viewer</strong></div>
+    <div class="muted">Shows your data “as-is” (no reformatting). Mobile: scroll to view.</div>
+  </header>
 
-  <noscript>
-    <p style="padding:16px">
-      Please enable JavaScript. If the frame doesn't load,
-      <a href="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec" target="_blank" rel="noopener">
-        open the Apps Script directly
-      </a>.
-    </p>
-  </noscript>
+  <div class="wrap">
+    <div class="bar">
+      <button id="reloadBtn">Reload</button>
+      <button id="toggleRawBtn">Show raw JSON</button>
+      <span class="status" id="status">Loading…</span>
+    </div>
+
+    <div id="tableMount" class="table-wrap" hidden></div>
+    <pre id="rawMount" hidden></pre>
+  </div>
+
+  <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
+
+    const statusEl = document.getElementById('status');
+    const tableMount = document.getElementById('tableMount');
+    const rawMount = document.getElementById('rawMount');
+    const reloadBtn = document.getElementById('reloadBtn');
+    const toggleRawBtn = document.getElementById('toggleRawBtn');
+
+    reloadBtn.addEventListener('click', () => loadData());
+    toggleRawBtn.addEventListener('click', () => {
+      const showing = !rawMount.hidden;
+      rawMount.hidden = showing;
+      toggleRawBtn.textContent = showing ? 'Show raw JSON' : 'Hide raw JSON';
+    });
+
+    // Try normal fetch first; if it fails (CORS, non-JSON), fall back to JSONP (?callback=__onGASData)
+    async function loadData() {
+      statusEl.textContent = 'Loading…';
+      tableMount.hidden = true;
+      rawMount.hidden = true;
+      tableMount.innerHTML = '';
+      rawMount.textContent = '';
+
+      try {
+        // Attempt JSON fetch
+        const res = await fetch(GAS_URL, { credentials: 'omit' });
+        const ctype = (res.headers.get('content-type') || '').toLowerCase();
+        let data;
+
+        if (ctype.includes('application/json') || ctype.includes('text/json')) {
+          data = await res.json();
+        } else {
+          // Could still be JSON string
+          const txt = await res.text();
+          try { data = JSON.parse(txt); }
+          catch (e) { throw new Error('Not JSON; switching to JSONP'); }
+        }
+
+        handleData(data);
+      } catch (e) {
+        // JSONP fallback
+        statusEl.textContent = 'Loading via JSONP…';
+        jsonp(GAS_URL, '__onGASData');
+      }
+    }
+
+    // JSONP helper
+    function jsonp(baseUrl, cbName) {
+      // Clean previous if any
+      const prev = document.getElementById('jsonpScript');
+      if (prev) prev.remove();
+
+      window[cbName] = function(data) {
+        handleData(data);
+      };
+
+      const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'callback=' + cbName + '&_ts=' + Date.now();
+      const s = document.createElement('script');
+      s.id = 'jsonpScript';
+      s.src = url;
+      s.onerror = () => {
+        statusEl.textContent = 'Failed to load data (JSONP).';
+      };
+      document.head.appendChild(s);
+    }
+
+    function handleData(data) {
+      // Show raw JSON as-is
+      rawMount.textContent = safeStringify(data, 2);
+
+      // Render without changing field names
+      renderAsTable(data);
+
+      statusEl.textContent = 'Loaded';
+      tableMount.hidden = false;
+    }
+
+    function renderAsTable(data) {
+      // Normalize shapes: array of objects → table; object → if it has array field, use it; else show key/value
+      let rows = [];
+      if (Array.isArray(data)) {
+        rows = data;
+      } else if (data && typeof data === 'object') {
+        // Common shapes: {data:[...]} or {records:[...]}
+        if (Array.isArray(data.data)) rows = data.data;
+        else if (Array.isArray(data.records)) rows = data.records;
+        else if (Array.isArray(data.values)) rows = data.values;
+        else {
+          // Fallback: convert object of primitives to one-row table
+          rows = [data];
+        }
+      } else {
+        // Primitive or unknown → wrap
+        rows = [{ value: data }];
+      }
+
+      // If rows are primitives, box them
+      if (rows.length && typeof rows[0] !== 'object') {
+        rows = rows.map(v => ({ value: v }));
+      }
+
+      // Collect union of keys to avoid reordering/renaming
+      const cols = [];
+      for (const r of rows) {
+        if (r && typeof r === 'object') {
+          for (const k of Object.keys(r)) {
+            if (!cols.includes(k)) cols.push(k);
+          }
+        }
+      }
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      cols.forEach(c => {
+        const th = document.createElement('th');
+        th.textContent = c; // keep original key
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        cols.forEach(c => {
+          const td = document.createElement('td');
+          const v = r ? r[c] : undefined;
+          td.textContent = formatCell(v);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+
+      tableMount.innerHTML = '';
+      tableMount.appendChild(table);
+    }
+
+    function formatCell(v) {
+      if (v == null) return '';
+      if (typeof v === 'object') return JSON.stringify(v);
+      return String(v);
+    }
+
+    function safeStringify(obj, spaces = 0) {
+      const cache = new WeakSet();
+      return JSON.stringify(obj, function(key, value) {
+        if (typeof value === 'object' && value !== null) {
+          if (cache.has(value)) return '[Circular]';
+          cache.add(value);
+        }
+        return value;
+      }, spaces);
+    }
+
+    // Kick off
+    loadData();
+  </script>
 </body>
 </html>
