@@ -8,6 +8,7 @@
                  minimum-scale=0.25, maximum-scale=10,
                  user-scalable=yes, viewport-fit=cover" />
   <title>Pulse Point</title>
+
   <style>
     /* Allow native gestures & panning */
     html, body {
@@ -16,18 +17,21 @@
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
       touch-action: pinch-zoom pan-x pan-y;
-      overflow: auto; /* pan after zoom */
+      overflow: hidden;                /* prevent double scrollbars on the shell */
       background: #0b0b0b;
     }
-    /* Scroll container for panning when zoomed */
+
+    /* Scroll container so 1-finger pan works even when page is zoomed */
     .wrap {
       position: absolute;
       inset: 0;
-      overflow: auto;
+      overflow: auto;                  /* both axes on the shell */
       -webkit-overflow-scrolling: touch;
       background: #0b0b0b;
     }
-    :root { --scale: 1; --basew: 1152px; } /* virtual desktop width on phone */
+
+    :root { --scale: 1; --basew: 1152px; }  /* virtual desktop width on phone */
+
     /* Desktop: fill window, no transform */
     #app {
       position: absolute;
@@ -40,38 +44,46 @@
       transform: none;
       touch-action: pinch-zoom pan-x pan-y; /* gestures allowed over iframe element */
     }
+
     /* Phone: emulate desktop width, then scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      width: var(--basew); /* unscaled width */
-      height: calc(100dvh / var(--scale)); /* fills viewport after scaling */
+      width: var(--basew);                       /* unscaled width */
+      height: calc(100dvh / var(--scale));       /* fills viewport after scaling */
       will-change: transform;
     }
-    /* Transparent overlay that auto-appears only while a pinch is happening.
-       Purpose: make pinch work even when starting over the table inside the iframe. */
+
+    /* Overlay that is active ONLY while a pinch is happening.
+       It lets the browser start pinch even if the first finger is over the iframe.
+       We keep it hidden (pointer-events:none) when not pinching so taps/scrolls pass through. */
     #pinchShield {
       position: fixed;
       inset: 0;
-      z-index: 2147483647; /* above iframe */
+      z-index: 2147483647;                       /* above iframe */
       background: transparent;
-      touch-action: pinch-zoom pan-x pan-y; /* let browser handle pinch/pan */
-      display: block; /* always visible for capture */
+      touch-action: pinch-zoom pan-x pan-y;      /* let browser handle pinch/pan */
+      display: block;                             /* always in the tree */
+      pointer-events: none;                       /* BUT not intercepting by default */
     }
   </style>
+
   <script>
     (function () {
-      const DEFAULT_BASE_WIDTH = 1152; // tweak default phone size via ?w=1080 (bigger) or ?w=1280 (smaller)
+      const DEFAULT_BASE_WIDTH = 1152; // tweak with ?w=1080 / ?w=1280
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
+
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
         const n = v === null ? NaN : Number(v);
         return Number.isFinite(n) && n > 0 ? n : def;
       }
+
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH); // downscale only on phones
+        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on phones
+
         if (scale < 0.999) {
           document.body.classList.add('mobile');
           document.documentElement.style.setProperty('--scale', scale.toFixed(4));
@@ -82,97 +94,61 @@
           document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
         }
       }
-      // Modified pinch overlay to allow single touch pass-through after delay
+
+      // Auto pinch overlay:
+      // - pointer-events:auto ONLY while 2+ touches are down
+      // - pointer-events:none otherwise (so taps and 1-finger scroll go to the iframe)
       function setupAutoPinchOverlay() {
         const shield = document.getElementById('pinchShield');
-        let timer = null;
-        const DELAY = 100; // ms to wait for possible second finger
-        let touches = 0;
-        let pointers = 0;
 
-        // Touch Events
-        window.addEventListener('touchstart', (e) => {
-          touches = e.touches.length;
-          if (touches === 1) {
-            clearTimeout(timer);
-            shield.style.pointerEvents = 'auto';
-            timer = setTimeout(() => {
-              shield.style.pointerEvents = 'none';
-            }, DELAY);
-          } else if (touches >= 2) {
-            clearTimeout(timer);
-            shield.style.pointerEvents = 'auto';
-          }
-        }, { passive: false, capture: true });
-        window.addEventListener('touchmove', (e) => {
-          touches = e.touches.length;
-          if (touches >= 2) {
-            clearTimeout(timer);
-            shield.style.pointerEvents = 'auto';
-          }
-        }, { passive: false, capture: true });
-        window.addEventListener('touchend', (e) => {
-          touches = e.touches.length;
-          clearTimeout(timer);
-          if (touches === 0) {
-            shield.style.pointerEvents = 'auto';
-          }
-        }, { passive: false, capture: true });
-        window.addEventListener('touchcancel', (e) => {
-          touches = 0;
-          clearTimeout(timer);
-          shield.style.pointerEvents = 'auto';
-        }, { passive: false, capture: true });
+        // Safety defaults
+        const setActive = (on) => {
+          shield.style.pointerEvents = on ? 'auto' : 'none';
+        };
+        setActive(false); // not intercepting at rest
 
-        // Pointer Events
+        // For Pointer Events (Chrome/Android and modern browsers)
+        const activePointers = new Set();
         window.addEventListener('pointerdown', (e) => {
           if (e.pointerType === 'touch') {
-            pointers++;
-            if (pointers === 1) {
-              clearTimeout(timer);
-              shield.style.pointerEvents = 'auto';
-              timer = setTimeout(() => {
-                shield.style.pointerEvents = 'none';
-              }, DELAY);
-            } else if (pointers >= 2) {
-              clearTimeout(timer);
-              shield.style.pointerEvents = 'auto';
-            }
+            activePointers.add(e.pointerId);
+            if (activePointers.size >= 2) setActive(true);
           }
-        }, { passive: false, capture: true });
-        window.addEventListener('pointermove', (e) => {
-          if (e.pointerType === 'touch' && pointers >= 2) {
-            clearTimeout(timer);
-            shield.style.pointerEvents = 'auto';
-          }
-        }, { passive: false, capture: true });
-        window.addEventListener('pointerup', (e) => {
-          if (e.pointerType === 'touch') {
-            pointers = Math.max(0, pointers - 1);
-            clearTimeout(timer);
-            if (pointers === 0) {
-              shield.style.pointerEvents = 'auto';
-            }
-          }
-        }, { passive: false, capture: true });
+        }, { passive: true });
 
-        // Safari gesture events
-        window.addEventListener('gesturestart', (e) => {
-          clearTimeout(timer);
-          shield.style.pointerEvents = 'auto';
-        }, { passive: false });
-        window.addEventListener('gesturechange', (e) => {
-          shield.style.pointerEvents = 'auto';
-        }, { passive: false });
-        window.addEventListener('gestureend', (e) => {
-          shield.style.pointerEvents = 'auto';
-        }, { passive: false });
+        const endPointer = (e) => {
+          if (e.pointerType === 'touch') {
+            activePointers.delete(e.pointerId);
+            if (activePointers.size < 2) setActive(false);
+          }
+        };
+        window.addEventListener('pointerup', endPointer, { passive: true });
+        window.addEventListener('pointercancel', endPointer, { passive: true });
+
+        // iOS Safari still fires gesture* events on the top page when zooming
+        window.addEventListener('gesturestart', () => setActive(true),  { passive: true });
+        window.addEventListener('gestureend',   () => setActive(false), { passive: true });
+        window.addEventListener('gesturecancel',() => setActive(false), { passive: true });
+
+        // Fallback Touch Events (older devices)
+        let touches = 0;
+        window.addEventListener('touchstart', (e) => {
+          touches = e.touches.length;
+          if (touches >= 2) setActive(true);
+        }, { passive: true });
+        window.addEventListener('touchend', (e) => {
+          touches = e.touches.length;
+          if (touches < 2) setActive(false);
+        }, { passive: true });
+        window.addEventListener('touchcancel', () => { touches = 0; setActive(false); }, { passive: true });
       }
+
       function init() {
         fit(); // size before load to avoid flash
         document.getElementById('app').src = GAS_URL;
         setupAutoPinchOverlay();
       }
+
       document.addEventListener('DOMContentLoaded', init, { passive: true });
       window.addEventListener('resize', fit, { passive: true });
       window.addEventListener('orientationchange', fit, { passive: true });
@@ -183,7 +159,8 @@
   <div class="wrap">
     <iframe id="app" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
   </div>
-  <!-- Auto pinch overlay (no buttons, appears only while two fingers are down) -->
+
+  <!-- Overlay (only intercepts when 2+ fingers are down) -->
   <div id="pinchShield" aria-hidden="true"></div>
 </body>
 </html>
