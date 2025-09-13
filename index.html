@@ -12,23 +12,29 @@
     .wrap {
       position: fixed;
       inset: 0;
-      overflow: hidden;           /* avoid scrollbars due to scaling math */
+      overflow: hidden;                 /* avoid outer scrollbars from scaling math */
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1280px; }  /* JS updates both */
+    :root { --scale: 1; --basew: 1280px; }  /* JS updates for mobile mode */
 
-    /* We scale the iframe (we do NOT change the GAS app). */
+    /* Default = DESKTOP mode: fill the screen, no scale */
     #app {
       position: absolute;
       top: 0; left: 0;
       border: 0;
       display: block;
       background: transparent;
+      transform: none;                  /* no scaling on desktop */
+      width: 100vw;                     /* use full browser width */
+      height: 100dvh;                   /* use full browser height */
+    }
+
+    /* MOBILE mode: emulate a wider virtual width and scale down */
+    body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      /* Unscaled size: width = virtual desktop width; height tall enough to fill viewport after scale */
-      width: var(--basew);
+      width: var(--basew);              /* unscaled virtual width (e.g., 1280px) */
       height: calc(100dvh / var(--scale));
       will-change: transform;
     }
@@ -36,11 +42,9 @@
 
   <script>
     (function () {
-      // --- CONFIG ------------------------------------------------------------
-      // Use URL override ?w=1366 to try another virtual width quickly.
-      const DEFAULT_BASE_WIDTH = 1280; // desktop look (matches your "should be like this")
+      // Desktop look inside the iframe; override with ?w=1366 etc.
+      const DEFAULT_BASE_WIDTH = 1280;
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
-      // -----------------------------------------------------------------------
 
       function getParamNumber(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -52,11 +56,20 @@
         const BASE_WIDTH = getParamNumber('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
 
-        // Only scale DOWN (never up) to keep it crisp
+        // Only scale DOWN on narrow screens; on desktop use full width (no scale)
         const scale = Math.min(1, vw / BASE_WIDTH);
 
-        document.documentElement.style.setProperty('--scale', scale.toFixed(4));
-        document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
+        if (scale < 0.999) {
+          // MOBILE MODE
+          document.body.classList.add('mobile');
+          document.documentElement.style.setProperty('--scale', scale.toFixed(4));
+          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
+        } else {
+          // DESKTOP MODE
+          document.body.classList.remove('mobile');
+          document.documentElement.style.setProperty('--scale', '1');
+          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
+        }
       }
 
       function init() {
