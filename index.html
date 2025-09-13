@@ -1,74 +1,62 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-  <title>Apps Script Embed</title>
-  <style>
-    html, body { height: 100%; margin: 0; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-    body { background: #0b0b0b; }
 
-    /* Fullscreen wrapper that holds the iframe */
-    .wrap {
+
+
+  
+  
+  Apps Script Embed
+  
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .frame {
       position: fixed;
       inset: 0;
-      overflow: hidden;        /* prevent scrollbars caused by downscaling math */
+      width: 100%;
+      height: 100dvh;
+      min-height: 100vh;
+      max-height: 100dvh;
+      border: 0;
+      background: transparent;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      display: block;
+      transform-origin: top left;
+    }
+    body {
       background: #0b0b0b;
     }
-
-    /* The iframe we scale (never touch your GAS page) */
-    .frame {
-      position: absolute;
-      top: 0; left: 0;
-      border: 0;
-      /* Size the unscaled box so that after transform it exactly fills the screen */
-      width: calc(100vw / var(--scale, 1));
-      height: calc(100dvh / var(--scale, 1));
-      transform: scale(var(--scale, 1));
-      transform-origin: top left;
-      will-change: transform;
-      background: transparent;
-      display: block;
-    }
-  </style>
-
-  <script>
-    (function () {
-      // If your GAS mobile layout is designed around ~430–480px, pick that here.
-      const BASE_WIDTH = 430;
-
-      function fit() {
-        const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        // Only scale DOWN on narrow phones; never scale up
-        const scale = Math.min(1, vw / BASE_WIDTH);
-        document.documentElement.style.setProperty('--scale', scale.toFixed(4));
+    @media screen and (max-width: 360px) {
+      .frame {
+        transform: scale(0.9);
       }
+    }
+  
 
-      // Run on load and when the phone rotates/resizes
-      document.addEventListener('DOMContentLoaded', fit, { passive: true });
-      window.addEventListener('resize', fit, { passive: true });
-      window.addEventListener('orientationchange', fit, { passive: true });
-    })();
-  </script>
-</head>
-<body>
-  <div class="wrap">
-    <iframe
-      class="frame"
-      src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
-      loading="eager"
-      referrerpolicy="no-referrer">
-    </iframe>
-  </div>
 
-  <noscript>
-    <p style="padding:16px;color:#fff">
+  
+  
+  
+    <p style="padding:16px; color: #fff; text-align: center;">
       Please enable JavaScript. If the frame doesn't load,
-      <a style="color:#6cf" href="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec" target="_blank" rel="noopener">
+      <a href="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec" target="_blank" rel="noopener">
         open the Apps Script directly
       </a>.
     </p>
-  </noscript>
-</body>
-</html>
+  
+  
+    function adjustIframeScale() {
+      const iframe = document.querySelector('.frame');
+      const width = window.innerWidth;
+      if (width < 360) {
+        iframe.style.transform = `scale(${Math.max(0.85, width / 360)})`;
+      } else {
+        iframe.style.transform = 'scale(1)';
+      }
+    }
+    window.addEventListener('resize', adjustIframeScale);
+    window.addEventListener('load', adjustIframeScale);
+  
+
