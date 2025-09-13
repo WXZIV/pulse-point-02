@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- Enable native pinch zoom on phones -->
+  <!-- Enable native pinch zoom -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
@@ -10,14 +10,14 @@
   <title>Pulse Point</title>
 
   <style>
-    /* Base page: allow native gestures and panning */
+    /* Allow native gestures & panning */
     html, body {
       height: 100%;
       margin: 0;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
       touch-action: pinch-zoom pan-x pan-y;
-      overflow: auto;                    /* pan after zoom */
+      overflow: auto;                     /* pan after zoom */
       background: #0b0b0b;
     }
 
@@ -30,7 +30,7 @@
       background: #0b0b0b;
     }
 
-    :root { --scale: 1; --basew: 1152px; }  /* phone virtual desktop width */
+    :root { --scale: 1; --basew: 1152px; }  /* virtual desktop width on phone */
 
     /* Desktop: fill window, no transform */
     #app {
@@ -42,46 +42,45 @@
       width: 100vw;
       height: 100dvh;
       transform: none;
-      /* also allow gestures directly over the iframe element */
-      touch-action: pinch-zoom pan-x pan-y;
+      touch-action: pinch-zoom pan-x pan-y; /* gestures allowed over iframe element */
     }
 
     /* Phone: emulate desktop width, then scale down to fit */
     body.mobile #app {
       transform-origin: top left;
       transform: scale(var(--scale));
-      width: var(--basew);                       /* unscaled virtual width */
+      width: var(--basew);                       /* unscaled width */
       height: calc(100dvh / var(--scale));       /* fills viewport after scaling */
       will-change: transform;
     }
 
-    /* Auto pinch shield: appears ONLY while two fingers are down */
+    /* Transparent overlay that auto-appears only while a pinch is happening.
+       Purpose: make pinch work even when starting over the table inside the iframe. */
     #pinchShield {
       position: fixed;
       inset: 0;
       z-index: 2147483647;                       /* above iframe */
       background: transparent;
-      /* Let browser handle pinch & pan on the shield */
-      touch-action: pinch-zoom pan-x pan-y;
-      display: none;                              /* hidden by default */
+      touch-action: pinch-zoom pan-x pan-y;      /* let browser handle pinch/pan */
+      display: none;                              /* hidden except during pinch */
     }
   </style>
 
   <script>
     (function () {
-      const DEFAULT_BASE_WIDTH = 1152; // adjust with ?w=1080 (bigger UI) or ?w=1280 (smaller)
+      const DEFAULT_BASE_WIDTH = 1152; // tweak default phone size via ?w=1080 (bigger) or ?w=1280 (smaller)
       const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
 
-      function qNum(name, def) {
+      function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
         const n = v === null ? NaN : Number(v);
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
       function fit() {
-        const BASE_WIDTH = qNum('w', DEFAULT_BASE_WIDTH);
+        const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH); // downscale only on phones
+        const scale = Math.min(1, vw / BASE_WIDTH);   // downscale only on phones
 
         if (scale < 0.999) {
           document.body.classList.add('mobile');
@@ -94,61 +93,51 @@
         }
       }
 
-      // --- Auto pinch overlay (no buttons) -------------------------------
+      // Auto pinch overlay: make pinch work even when starting over the table (inside iframe)
       function setupAutoPinchOverlay() {
         const shield = document.getElementById('pinchShield');
-        let activeTouches = 0;
-        let hideTimer = null;
+        let touches = 0, pointers = 0, hideTimer = null;
 
-        const showShield = () => {
-          if (shield.style.display !== 'block') shield.style.display = 'block';
-          // when shield is visible, native pinch works even over the table inside iframe
-        };
-        const scheduleHide = () => {
+        const show = () => { if (shield.style.display !== 'block') shield.style.display = 'block'; };
+        const hideSoon = () => {
           clearTimeout(hideTimer);
-          hideTimer = setTimeout(() => {
-            shield.style.display = 'none';
-          }, 180); // small delay to avoid flicker at gesture end
+          hideTimer = setTimeout(() => { shield.style.display = 'none'; }, 200);
         };
 
-        // Use Touch Events (widely supported on mobile)
+        // Touch Events (Android + iOS)
         window.addEventListener('touchstart', (e) => {
-          activeTouches = e.touches.length;
-          if (activeTouches >= 2) showShield();
+          touches = e.touches.length;
+          if (touches >= 2) show();
         }, { passive: true });
 
         window.addEventListener('touchmove', (e) => {
-          activeTouches = e.touches.length;
-          if (activeTouches >= 2) showShield();
+          touches = e.touches.length;
+          if (touches >= 2) show();
         }, { passive: true });
 
         window.addEventListener('touchend', (e) => {
-          activeTouches = e.touches.length;
-          if (activeTouches < 2) scheduleHide();
+          touches = e.touches.length;
+          if (touches < 2) hideSoon();
         }, { passive: true });
 
         window.addEventListener('touchcancel', () => {
-          activeTouches = 0;
-          scheduleHide();
+          touches = 0;
+          hideSoon();
         }, { passive: true });
 
-        // Fallback for Pointer Events devices
-        let pointerCount = 0;
+        // Pointer Events (Chrome/Android + some others)
         window.addEventListener('pointerdown', (e) => {
-          if (e.pointerType === 'touch') {
-            pointerCount++;
-            if (pointerCount >= 2) showShield();
-          }
+          if (e.pointerType === 'touch') { pointers++; if (pointers >= 2) show(); }
         }, { passive: true });
 
         window.addEventListener('pointerup', (e) => {
-          if (e.pointerType === 'touch') {
-            pointerCount = Math.max(0, pointerCount - 1);
-            if (pointerCount < 2) scheduleHide();
-          }
+          if (e.pointerType === 'touch') { pointers = Math.max(0, pointers - 1); if (pointers < 2) hideSoon(); }
         }, { passive: true });
+
+        // Safari-specific: gesture events
+        window.addEventListener('gesturestart', show, { passive: true });
+        ['gestureend','gesturecancel'].forEach(ev => window.addEventListener(ev, hideSoon, { passive: true }));
       }
-      // -------------------------------------------------------------------
 
       function init() {
         fit(); // size before load to avoid flash
@@ -167,7 +156,7 @@
     <iframe id="app" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
   </div>
 
-  <!-- Transparent overlay that appears only while two fingers are down -->
+  <!-- Auto pinch overlay (no buttons, appears only while two fingers are down) -->
   <div id="pinchShield" aria-hidden="true"></div>
 </body>
 </html>
