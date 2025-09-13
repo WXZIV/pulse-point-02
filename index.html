@@ -7,7 +7,7 @@
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
                  user-scalable=yes, viewport-fit=cover" />
-  <title>Pulse Point</title>
+  <title>Pulse Point (GitHub Wrapper)</title>
   <style>
     html, body {
       height: 100%;
@@ -28,13 +28,13 @@
       padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    /* Larger virtual desktop => smaller UI on phones */
-    :root { --basew: 1440px; --scale: 1; }
+    /* Virtual desktop width used only on narrow screens */
+    :root { --basew: 1280px; --scale: 1; }
 
-    /* Iframe fills the window (desktop = no transform) */
+    /* Iframe fills the window on desktop (no transform) */
     #app {
       position: absolute;
-      top: 0; left: 0;
+      inset: 0;
       width: 100vw;
       height: 100dvh;
       height: 100svh;
@@ -47,7 +47,7 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Phone: scale down to fit width, but still allow pinch-zoom */
+    /* Phone/narrow windows: scale to fit width (normal full fit) */
     body.mobile #app {
       transform-origin: top left;
       transform: translateZ(0) scale(var(--scale));
@@ -84,14 +84,19 @@
 
   <script>
     (function () {
-      // Your Apps Script Web App URL
+      // 👉 Your Apps Script Web App URL
       const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
+      // Optional: allow ?src=<url> override
+      const qsSrc = new URL(location.href).searchParams.get("src");
+      const APP_URL = qsSrc || GAS_URL;
 
-      // Tuning: smaller text/controls on phones
-      const DEFAULT_BASE_WIDTH   = 1440; // ↑ bigger base => smaller UI on phone
-      const DEFAULT_SCALE_BOOST  = 1.00; // no extra boost
-      const MIN_EFFECTIVE_SCALE  = 0.30; // allow real downscaling if needed
-      const MAX_EFFECTIVE_SCALE  = 0.995;
+      // Fit logic:
+      // - Desktop (>= DESKTOP_MIN): no scaling (true full fit)
+      // - Narrow windows/phones: scale = viewportWidth / baseWidth (fit-to-width)
+      const DESKTOP_MIN        = 1280;        // treat >= this as desktop (no transform)
+      const DEFAULT_BASE_WIDTH = 1280;        // “normal” desktop content width
+      const MIN_SCALE          = 0.30;
+      const MAX_SCALE          = 0.999;       // just below 1 to avoid Safari jitter
 
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -99,35 +104,31 @@
         return Number.isFinite(n) && n > 0 ? n : def;
       }
 
-      // Fit iframe to screen (scale down on phones)
       function fit() {
         const BASE_WIDTH = numParam('w', DEFAULT_BASE_WIDTH);
-        const BOOST      = numParam('s', DEFAULT_SCALE_BOOST);
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-
-        let rawScale = (vw / BASE_WIDTH) * BOOST;
-        rawScale = Math.min(1, rawScale); // never upscale
-
-        // Snap to DPR steps to avoid blur
-        const dpr  = Math.max(1, window.devicePixelRatio || 1);
-        const step = 1 / (dpr * 4);
-        let snapped = Math.round(rawScale / step) / step;
-
-        // Allow real shrinking; cap just below 1
-        snapped = Math.max(MIN_EFFECTIVE_SCALE, Math.min(MAX_EFFECTIVE_SCALE, snapped));
 
         document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
 
-        if (snapped < 0.999) {
-          document.body.classList.add('mobile');
-          document.documentElement.style.setProperty('--scale', snapped.toFixed(4));
-        } else {
+        if (vw >= DESKTOP_MIN) {
+          // Desktop: fill window, no transform
           document.body.classList.remove('mobile');
           document.documentElement.style.setProperty('--scale', '1');
+          return;
         }
+
+        // Phone / narrow window: fit-to-width
+        let scale = vw / BASE_WIDTH;
+        const dpr  = Math.max(1, window.devicePixelRatio || 1);
+        const step = 1 / (dpr * 4); // snap to reduce blur
+        scale = Math.round(scale / step) / step;
+        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+
+        document.body.classList.add('mobile');
+        document.documentElement.style.setProperty('--scale', scale.toFixed(4));
       }
 
-      // Pinch-zoom that works on Android + iPhone (even when starting over the iframe)
+      // Pinch-zoom that works on Android + iPhone (even over the iframe)
       function setupGestureShield() {
         const shield = document.getElementById('gestureShield');
         let singleTimer = null;
@@ -141,7 +142,7 @@
           shield.style.pointerEvents = 'auto';
         }
 
-        // iOS Safari native gesture events
+        // iOS Safari gesture events
         window.addEventListener('gesturestart',  keepArmed, { passive: true });
         window.addEventListener('gesturechange', keepArmed, { passive: true });
         window.addEventListener('gestureend',   () => { shield.style.pointerEvents = 'none'; }, { passive: true });
@@ -157,10 +158,10 @@
           if (n >= 2) keepArmed();
         }, { capture: true, passive: true });
 
-        window.addEventListener('touchend',   () => { shield.style.pointerEvents = 'none'; },   { capture: true, passive: true });
-        window.addEventListener('touchcancel',() => { shield.style.pointerEvents = 'none'; },   { capture: true, passive: true });
+        window.addEventListener('touchend',   () => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
+        window.addEventListener('touchcancel',() => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
 
-        // Trackpad pinch (ctrl+wheel) on desktop
+        // Trackpad pinch on desktop (ctrl+wheel)
         let wheelTimer = null;
         window.addEventListener('wheel', (e) => {
           if (e.ctrlKey) {
@@ -170,12 +171,12 @@
           }
         }, { passive: true });
 
-        // Let first tap/scroll through after initial paint
+        // Let first tap/scroll go through after paint
         setTimeout(() => { shield.style.pointerEvents = 'none'; }, 0);
       }
 
       function init() {
-        document.getElementById('app').src = GAS_URL;
+        document.getElementById('app').src = APP_URL;
         fit();
         window.addEventListener('resize', fit, { passive: true });
         window.addEventListener('orientationchange', fit, { passive: true });
