@@ -9,17 +9,18 @@
     html, body { height: 100%; margin: 0; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     body { background: #0b0b0b; }
 
-    /* Container */
+    /* container */
     .wrap {
       position: fixed;
       inset: 0;
-      overflow: hidden;         /* avoid scrollbars from scaling math */
+      overflow: hidden; /* avoid scrollbars from scaling math */
       background: #0b0b0b;
     }
 
-    /* We scale the iframe itself (never touch your GAS page) */
-    :root { --scale: 1; }       /* JS updates this, but default=1 so it always shows */
+    /* scale variable set by JS; default 1 so page always shows */
+    :root { --scale: 1; }
 
+    /* scaled iframe (we never touch your GAS page) */
     .frame {
       position: absolute;
       top: 0; left: 0;
@@ -28,25 +29,24 @@
       background: transparent;
       transform-origin: top left;
       transform: scale(var(--scale));
-      /* Key: even before JS runs, these make it fill the screen */
+      /* ensure it fills the viewport even before JS runs */
       width: calc(100vw / var(--scale));
-      height: calc(100dvh / var(--scale));
+      height: calc(100vh / var(--scale));
+      height: calc(100dvh / var(--scale)); /* modern browsers */
     }
   </style>
 
   <script>
     (function () {
-      // Set this to your GAS mobile design width (commonly 430–520).
+      // Tune this to your GAS mobile design width (try 430–520)
       const BASE_WIDTH = 520;
 
       function fit() {
         const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        // Only scale DOWN on narrow screens; never scale up
-        const scale = Math.min(1, vw / BASE_WIDTH);
+        const scale = Math.min(1, vw / BASE_WIDTH); // only scale DOWN
         document.documentElement.style.setProperty('--scale', scale.toFixed(4));
       }
 
-      // Run now and on changes
       document.addEventListener('DOMContentLoaded', fit, { passive: true });
       window.addEventListener('resize', fit, { passive: true });
       window.addEventListener('orientationchange', fit, { passive: true });
@@ -59,7 +59,8 @@
       class="frame"
       src="https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec"
       loading="eager"
-      referrerpolicy="no-referrer">
+      referrerpolicy="no-referrer"
+      allowfullscreen>
     </iframe>
   </div>
 
