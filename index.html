@@ -48,7 +48,8 @@
       height: calc(100dvh / var(--scale)); /* fills viewport after scaling */
       will-change: transform;
     }
-    /* Transparent overlay for capturing pinch gestures */
+    /* Transparent overlay that auto-appears only while a pinch is happening.
+       Purpose: make pinch work even when starting over the table inside the iframe. */
     #pinchShield {
       position: fixed;
       inset: 0;
@@ -56,7 +57,7 @@
       background: transparent;
       touch-action: pinch-zoom pan-x pan-y; /* let browser handle pinch/pan */
       display: block;
-      pointer-events: none; /* default: pass through */
+      pointer-events: auto; /* initial capture */
     }
   </style>
   <script>
@@ -82,58 +83,125 @@
           document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
         }
       }
-      // Auto pinch overlay: toggle pointer-events for multi-touch
+      // Modified pinch overlay to allow single touch pass-through after delay or movement
       function setupAutoPinchOverlay() {
         const shield = document.getElementById('pinchShield');
-        let touches = 0, pointers = 0;
-        const enableCapture = () => { shield.style.pointerEvents = 'auto'; };
-        const disableCapture = () => { shield.style.pointerEvents = 'none'; };
+        let timer = null;
+        const DELAY = 150; // ms to wait for possible second finger
+        const MOVE_THRESHOLD = 5; // pixels to detect movement for scroll
+        let touches = 0;
+        let pointers = 0;
+        let startX = 0, startY = 0;
+        let pStartX = 0, pStartY = 0;
 
-        // Touch Events (Android + iOS)
+        // Touch Events
         window.addEventListener('touchstart', (e) => {
           touches = e.touches.length;
-          if (touches >= 2) enableCapture();
-        }, { passive: true });
+          if (touches === 1) {
+            startX = e.touches[0].pageX;
+            startY = e.touches[0].pageY;
+            clearTimeout(timer);
+            shield.style.pointerEvents = 'auto';
+            timer = setTimeout(() => {
+              shield.style.pointerEvents = 'none';
+            }, DELAY);
+          } else if (touches >= 2) {
+            clearTimeout(timer);
+            shield.style.pointerEvents = 'auto';
+          }
+        }, { passive: false, capture: true });
         window.addEventListener('touchmove', (e) => {
           touches = e.touches.length;
-          if (touches >= 2) enableCapture();
-        }, { passive: true });
+          if (touches === 1 && timer) {
+            const deltaX = e.touches[0].pageX - startX;
+            const deltaY = e.touches[0].pageY - startY;
+            if (Math.abs(deltaX) > MOVE_THRESHOLD || Math.abs(deltaY) > MOVE_THRESHOLD) {
+              clearTimeout(timer);
+              shield.style.pointerEvents = 'none';
+              timer = null;
+            }
+          } else if (touches >= 2) {
+            clearTimeout(timer);
+            shield.style.pointerEvents = 'auto';
+          }
+        }, { passive: false, capture: true });
         window.addEventListener('touchend', (e) => {
           touches = e.touches.length;
-          if (touches < 2) disableCapture();
-        }, { passive: true });
-        window.addEventListener('touchcancel', () => {
+          if (touches < 2) {
+            clearTimeout(timer);
+            shield.style.pointerEvents = 'auto';
+          }
+        }, { passive: false, capture: true });
+        window.addEventListener('touchcancel', (e) => {
           touches = 0;
-          disableCapture();
-        }, { passive: true });
+          clearTimeout(timer);
+          shield.style.pointerEvents = 'auto';
+        }, { passive: false, capture: true });
 
-        // Pointer Events (Chrome/Android + some others)
+        // Pointer Events
         window.addEventListener('pointerdown', (e) => {
           if (e.pointerType === 'touch') {
             pointers++;
-            if (pointers >= 2) enableCapture();
+            if (pointers === 1) {
+              pStartX = e.pageX;
+              pStartY = e.pageY;
+              clearTimeout(timer);
+              shield.style.pointerEvents = 'auto';
+              timer = setTimeout(() => {
+                shield.style.pointerEvents = 'none';
+              }, DELAY);
+            } else if (pointers >= 2) {
+              clearTimeout(timer);
+              shield.style.pointerEvents = 'auto';
+            }
           }
-        }, { passive: true });
+        }, { passive: false, capture: true });
         window.addEventListener('pointermove', (e) => {
-          if (e.pointerType === 'touch' && pointers >= 2) enableCapture();
-        }, { passive: true });
+          if (e.pointerType === 'touch') {
+            if (pointers === 1 && timer) {
+              const deltaX = e.pageX - pStartX;
+              const deltaY = e.pageY - pStartY;
+              if (Math.abs(deltaX) > MOVE_THRESHOLD || Math.abs(deltaY) > MOVE_THRESHOLD) {
+                clearTimeout(timer);
+                shield.style.pointerEvents = 'none';
+                timer = null;
+              }
+            } else if (pointers >= 2) {
+              clearTimeout(timer);
+              shield.style.pointerEvents = 'auto';
+            }
+          }
+        }, { passive: false, capture: true });
         window.addEventListener('pointerup', (e) => {
           if (e.pointerType === 'touch') {
             pointers = Math.max(0, pointers - 1);
-            if (pointers < 2) disableCapture();
+            if (pointers < 2) {
+              clearTimeout(timer);
+              shield.style.pointerEvents = 'auto';
+            }
           }
-        }, { passive: true });
+        }, { passive: false, capture: true });
         window.addEventListener('pointercancel', (e) => {
           if (e.pointerType === 'touch') {
             pointers = Math.max(0, pointers - 1);
-            if (pointers < 2) disableCapture();
+            if (pointers < 2) {
+              clearTimeout(timer);
+              shield.style.pointerEvents = 'auto';
+            }
           }
-        }, { passive: true });
+        }, { passive: false, capture: true });
 
-        // Safari-specific: gesture events
-        window.addEventListener('gesturestart', enableCapture, { passive: true });
-        window.addEventListener('gesturechange', enableCapture, { passive: true });
-        ['gestureend','gesturecancel'].forEach(ev => window.addEventListener(ev, disableCapture, { passive: true }));
+        // Safari gesture events
+        window.addEventListener('gesturestart', (e) => {
+          clearTimeout(timer);
+          shield.style.pointerEvents = 'auto';
+        }, { passive: false });
+        window.addEventListener('gesturechange', (e) => {
+          shield.style.pointerEvents = 'auto';
+        }, { passive: false });
+        window.addEventListener('gestureend', (e) => {
+          shield.style.pointerEvents = 'auto';
+        }, { passive: false });
       }
       function init() {
         fit(); // size before load to avoid flash
@@ -150,7 +218,7 @@
   <div class="wrap">
     <iframe id="app" loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
   </div>
-  <!-- Transparent pinch overlay -->
+  <!-- Auto pinch overlay -->
   <div id="pinchShield" aria-hidden="true"></div>
 </body>
 </html>
