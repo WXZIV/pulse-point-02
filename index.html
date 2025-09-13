@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <!-- keep native pinch-zoom enabled everywhere -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1,
                  minimum-scale=0.25, maximum-scale=10,
@@ -27,15 +28,15 @@
       padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    /* Slightly larger virtual width => content appears a bit smaller on phones */
-    :root { --basew: 1180px; --scale: 1; }
+    /* Slightly larger virtual desktop => smaller, tighter UI on phones */
+    :root { --basew: 1360px; --scale: 1; }
 
     #app {
       position: absolute;
       top: 0; left: 0;
       width: 100vw;
       height: 100dvh;
-      height: 100svh; /* better on mobile */
+      height: 100svh; /* better on mobile toolbars */
       border: 0;
       background: transparent;
       display: block;
@@ -45,25 +46,24 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Phone: scale the iframe to fit width */
+    /* Phone: scale iframe so it fits width, but you can still pinch-zoom */
     body.mobile #app {
       transform-origin: top left;
       transform: translateZ(0) scale(var(--scale));
-      width: var(--basew);
-      height: calc(100svh / var(--scale));
+      width: var(--basew);                     /* unscaled width */
+      height: calc(100svh / var(--scale));     /* fills viewport after scaling */
       will-change: transform;
     }
 
-    /* Overlay to ensure pinch can start over the iframe/table (iOS + Android) */
+    /* Overlay that guarantees pinch can start over the iframe/table */
     #gestureShield {
       position: fixed;
       inset: 0;
       z-index: 2147483647;
       background: transparent;
-      pointer-events: none;              /* released by default */
-      touch-action: pinch-zoom pan-x pan-y;
-      -webkit-user-select: none;
-      user-select: none;
+      pointer-events: auto;                    /* armed by default */
+      touch-action: pinch-zoom pan-x pan-y;    /* let the browser handle it */
+      -webkit-user-select: none; user-select: none;
     }
   </style>
 </head>
@@ -79,18 +79,19 @@
     </iframe>
   </div>
 
+  <!-- becomes touchable only while deciding pinch vs single touch -->
   <div id="gestureShield" aria-hidden="true"></div>
 
   <script>
     (function () {
-      // Your Apps Script Web App URL
+      // Your Apps Script URL
       const GAS_URL = "https://script.google.com/macros/s/AKfycbweRHw8SsIPvaP9Zw00T1U1PabDyteWXW6lm5iPaSaLHj4t1hqILIMiQDYKred03JKlPQ/exec";
 
-      // Smaller look on phones (text slightly smaller than before)
-      const DEFAULT_BASE_WIDTH = 1180;   // ↑ bigger virtual width => smaller UI
-      const DEFAULT_SCALE_BOOST = 1.00;  // no extra boost
-      const MIN_EFFECTIVE_SCALE = 0.86;  // allow a touch smaller if needed
-      const MAX_EFFECTIVE_SCALE = 0.995; // close to 1 avoids layout jank
+      // Tuning: smaller text on phones without breaking layout
+      const DEFAULT_BASE_WIDTH = 1360; // ↑ bigger base => smaller UI on phone
+      const DEFAULT_SCALE_BOOST = 1.00; // no extra boost
+      const MIN_EFFECTIVE_SCALE = 0.86;
+      const MAX_EFFECTIVE_SCALE = 0.995;
 
       function numParam(name, def) {
         const v = new URL(location.href).searchParams.get(name);
@@ -106,7 +107,7 @@
         let rawScale = (vw / BASE_WIDTH) * BOOST;
         rawScale = Math.min(1, rawScale);
 
-        // Snap to DPR to reduce blur
+        // Snap to DPR steps to reduce blur
         const dpr = Math.max(1, window.devicePixelRatio || 1);
         const step = 1 / (dpr * 4);
         let snapped = Math.round(rawScale / step) / step;
@@ -123,46 +124,42 @@
         }
       }
 
-      // Pinch-zoom support for Android + iPhone
+      // Pinch-zoom that works on Android + iPhone (even when starting over the iframe)
       function setupGestureShield() {
         const shield = document.getElementById('gestureShield');
         let singleTimer = null;
 
-        function armForSingleTouch() {
-          shield.style.pointerEvents = 'auto';
+        function releaseSoonForSingle() {
           clearTimeout(singleTimer);
-          singleTimer = setTimeout(() => { shield.style.pointerEvents = 'none'; }, 70);
+          singleTimer = setTimeout(() => { shield.style.pointerEvents = 'none'; }, 60);
         }
-        function keepForMultiTouch() {
+        function keepArmed() {
           clearTimeout(singleTimer);
           shield.style.pointerEvents = 'auto';
         }
 
         // iOS Safari gesture events
-        window.addEventListener('gesturestart', keepForMultiTouch, { passive: true });
-        window.addEventListener('gesturechange', keepForMultiTouch, { passive: true });
+        window.addEventListener('gesturestart', keepArmed, { passive: true });
+        window.addEventListener('gesturechange', keepArmed, { passive: true });
         window.addEventListener('gestureend', () => { shield.style.pointerEvents = 'none'; }, { passive: true });
 
         // Touch fallback (Android + some iOS)
         window.addEventListener('touchstart', (e) => {
-          const cnt = e.touches ? e.touches.length : 0;
-          if (cnt >= 2) keepForMultiTouch(); else armForSingleTouch();
+          const n = e.touches ? e.touches.length : 0;
+          if (n >= 2) keepArmed(); else releaseSoonForSingle();
         }, { capture: true, passive: true });
         window.addEventListener('touchmove', (e) => {
-          const cnt = e.touches ? e.touches.length : 0;
-          if (cnt >= 2) keepForMultiTouch();
+          const n = e.touches ? e.touches.length : 0;
+          if (n >= 2) keepArmed();
         }, { capture: true, passive: true });
-        window.addEventListener('touchend', (e) => {
-          const cnt = e.touches ? e.touches.length : 0;
-          if (cnt < 2) shield.style.pointerEvents = 'none';
-        }, { capture: true, passive: true });
+        window.addEventListener('touchend', () => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
         window.addEventListener('touchcancel', () => { shield.style.pointerEvents = 'none'; }, { capture: true, passive: true });
 
-        // Trackpad pinch (ctrl+wheel)
+        // Trackpad pinch (ctrl+wheel) on desktop
         let wheelTimer = null;
         window.addEventListener('wheel', (e) => {
           if (e.ctrlKey) {
-            keepForMultiTouch();
+            keepArmed();
             clearTimeout(wheelTimer);
             wheelTimer = setTimeout(() => { shield.style.pointerEvents = 'none'; }, 200);
           }
