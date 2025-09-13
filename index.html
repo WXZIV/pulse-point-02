@@ -1,129 +1,1125 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1,
-                 minimum-scale=0.25, maximum-scale=10,
-                 user-scalable=yes, viewport-fit=cover" />
-  <title>Pulse Point</title>
-
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
+  <title>Pulse Point (GitHub)</title>
   <style>
-    :root { --rail: 16px; --scale: 1; --basew: 1152px; }
-
-    /* Let the browser handle zoom & pan; we scroll only the .wrap */
-    html, body {
-      height: 100%;
-      margin: 0;
-      -webkit-text-size-adjust: 100%;
-      text-size-adjust: 100%;
+    /* ===== GitHub Pages frontend — touch & zoom friendly ===== */
+    html, body, #content, #table-container, .table-scroll {
       touch-action: pinch-zoom pan-x pan-y;
-      overflow: hidden;                 /* avoid double scrollbars */
-      background: #0b0b0b;
-    }
-
-    /* Fullscreen scroll area so 1-finger pan works even when zoomed */
-    .wrap {
-      position: absolute;
-      inset: 0;
-      overflow: auto;                   /* both axes */
       -webkit-overflow-scrolling: touch;
-      background: #0b0b0b;
+    }
+    html, body { height: auto; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0; padding: 0;
+      background: linear-gradient(135deg, #1A2A44 0%, #0D1B2A 100%);
+      min-height: 100vh; overflow: auto; color: #ECF0F1;
+      font-size: clamp(14px, 2vw, 16px); line-height: 1.6;
     }
 
-    /* Iframe fills viewport (desktop) */
-    #app {
-      position: absolute;
-      inset: 0;
-      border: 0;
-      width: 100vw;
-      height: 100dvh;
-      background: transparent;
-      touch-action: pinch-zoom pan-x pan-y;
+    /* Guard: hide app until "logged in" (simple client-side lock) */
+    body:not(.auth) #navbar,
+    body:not(.auth) #top-menu,
+    body:not(.auth) #sidebar,
+    body:not(.auth) #content,
+    body:not(.auth) #chartModal,
+    body:not(.auth) #chartBackdrop,
+    body:not(.auth) .modal,
+    body:not(.auth) .loading-overlay {
+      display: none !important;
     }
 
-    /* Optional: “virtual desktop width” for very small phones (gives natural L/R scroll) */
-    body.mobile #app {
-      transform-origin: top left;
-      transform: scale(var(--scale));
-      width: var(--basew);
-      height: calc(100dvh / var(--scale));
-      will-change: transform;
+    #app { display: flex; flex-direction: column; align-items: center; }
+
+    /* --- Login card --- */
+    #login-container {
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      background: linear-gradient(135deg, #2E4057 0%, #1A2A44 100%);
+      padding: 40px; border-radius: 16px; z-index: 10000;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.6); border: 1px solid #D4A017;
+      opacity: 0; animation: loginFadeIn 0.5s ease forwards;
+      text-align: center; max-width: 300px; width: 90vw;
+    }
+    #login-container .logo {
+      font-size:2.2em; font-weight:800; color:#ffd605; margin-bottom: 24px;
+    }
+    #login-container .input-group { margin: 16px 0; display: flex; flex-direction: column; align-items: center; }
+    #login-container label { align-self: flex-start; font-weight: 600; color: #ffd605; margin-bottom: 6px; font-size: 0.95em; }
+    #login-container input {
+      padding: 14px 16px; width: 100%; max-width: 280px; border: 1px solid #D4A017; border-radius: 8px;
+      background: #1e293b; color: #ECF0F1;
+    }
+    #login-container button{
+      padding:14px 32px; margin-top:20px; background:linear-gradient(45deg,#D4A017,#ffd605);
+      border:none; color:#1A2A44; cursor:pointer; border-radius:8px; font-weight:700; width: 100%; max-width: 280px;
     }
 
-    /* -------- Pinch Rails (GitHub-only workaround) --------
-       These belong to THIS page, not the iframe, so native pinch can start.
-       Non-zero alpha makes them touchable on iOS but visually invisible. */
-    .rail {
-      position: fixed;
-      z-index: 2147483647;
-      background: rgba(0,0,0,0.001);    /* invisible but touchable */
-      touch-action: pinch-zoom pan-x pan-y;
-      pointer-events: auto;
+    /* --- Navbar --- */
+    #navbar {
+      background: linear-gradient(90deg, #1b263b 0%, #2E4057 100%);
+      color: #fff; padding:16px 32px; position:fixed; top:0; width:100%;
+      z-index:1000; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+      display:flex; align-items:center; gap:12px; border-bottom:2px solid #D4A017;
     }
-    /* Top & bottom rails (full width) */
-    #railTop    { left: 0; right: 0; top: 0;    height: var(--rail); }
-    #railBottom { left: 0; right: 0; bottom: 0; height: var(--rail); }
-    /* Left & right rails (full height) */
-    #railLeft   { top: 0; bottom: 0; left: 0;   width: var(--rail); }
-    #railRight  { top: 0; bottom: 0; right: 0;  width: var(--rail); }
+    #toggle-nav { background:none; border:none; color:#D4A017; font-size:28px; cursor:pointer; padding:8px; }
+    #navbar .logo{ font-size:1.3em; font-weight:800; color:#ffd605; }
+    #timestamp{
+      margin-left:auto;
+      background: linear-gradient(45deg, #26A69A, #10b981);
+      padding:10px 16px; border-radius:28px; box-shadow:0 4px 12px rgba(16,185,129,0.3);
+      color:#fff; font-weight:700;
+    }
+    #btnHourlyChart{ padding:10px 14px; background:linear-gradient(45deg,#26A69A,#10b981); border:none; color:#fff; border-radius:8px; font-weight:700; }
+    #logout-btn{
+      padding:10px 14px; background:linear-gradient(45deg,#D4A017,#ffd605);
+      border:none; color:#1A2A44; border-radius:8px; font-weight:700;
+    }
 
-    /* (Optional) make rails bigger on extra-small phones */
-    @media (max-width: 360px) {
-      :root { --rail: 20px; }
+    /* --- Menus & Sidebar --- */
+    #top-menu{
+      background: linear-gradient(90deg, #2E4057 0%, #34495E 100%);
+      padding:16px 32px; position:fixed; top:64px; left:0; width:100%; z-index:1001;
+      display:flex; flex-wrap:wrap; gap:24px; justify-content:center; border-bottom:2px solid #D4A017;
+    }
+    .top-menu-group{ margin:6px 0; position:relative; }
+    .top-menu-group-header{
+      background:linear-gradient(45deg,#D4A017,#ffd605); border:1px solid #ffd605; color:#1A2A44;
+      padding:12px 18px; border-radius:8px; cursor:pointer; font-weight:700; min-width:180px;
+    }
+    .top-menu-group-content{
+      display:none; position:absolute; top:100%; left:50%; transform: translateX(-50%);
+      flex-direction:column; gap:10px; padding:10px; background:#34495E; border-radius:8px; border:1px solid #D4A017; min-width:220px;
+    }
+    .top-menu-group-content.open{ display:flex; }
+    .top-menu-group-content button{
+      background:linear-gradient(45deg,#D4A017,#ffd605); border:1px solid #ffd605; color:#1A2A44; padding:10px 16px; border-radius:6px; font-weight:700;
+    }
+    .top-menu-group-content button.active{ background:linear-gradient(45deg,#26A69A,#10b981); color:#fff; border-color:#10b981; }
+
+    #sidebar{
+      position:fixed; top:128px; left:0; width:320px; height:calc(100vh - 128px);
+      background:linear-gradient(135deg,#34495E 0%,#2E4057 100%); color:#ECF0F1; padding:24px;
+      overflow-y:auto; transform:translateX(-100%); transition:transform .3s ease; z-index:999; border-right:2px solid #D4A017;
+    }
+    #sidebar.active{ transform:translateX(0); }
+    .group{ background:#2E4057; border-radius:12px; margin-bottom:16px; overflow:hidden; border:1px solid #D4A017; }
+    .group h3{ margin:0; font-size:18px; padding:16px; background:linear-gradient(45deg,#D4A017,#ffd605); color:#1A2A44; cursor:pointer; }
+    .sheet-list{ list-style:none; padding:0 16px 16px; margin:0; }
+    .sheet-list li{ padding:12px; background:#34495E; border-radius:6px; margin:8px 0; cursor:pointer; font-weight:700; }
+
+    /* --- Content & Table --- */
+    #content{ margin-top:140px; padding:16px 12px; transition: margin-left .3s ease; }
+    #sidebar.active + #content{ margin-left:320px; }
+
+    #table-tools{ display:none; align-items:center; gap:12px; }
+    #updateTimeBadge{ margin-left:auto; font-weight:800; color:#ffd605; background:rgba(255,255,255,0.06); border:1px solid rgba(212,160,23,0.6); padding:6px 10px; border-radius:10px; }
+
+    #table-container{
+      overflow:auto; max-height: calc(100vh - 250px);
+      border:2px solid #D4A017; border-radius:12px; background:#fff; box-shadow:0 8px 32px rgba(0,0,0,0.4);
+    }
+    #table-container>table{ width: max-content; min-width: 100%; table-layout:auto; border-collapse:separate; border-spacing:0; background:#fff; border-radius:12px; }
+    #table-container>table th, #table-container>table td{
+      border:1px solid #D4A017; padding:12px; text-align:center; font-size:14px; font-weight:600; white-space: nowrap;
+    }
+    #table-container>table th{ background:linear-gradient(45deg,#D4A017,#ffd605); color:#1A2A44; position:sticky; top:0; z-index:10; }
+    #table-container>table td{ background:#F5F5F5; color:#000; }
+    #table-container>table td.sticky-left{ position:sticky; left:0; background:#F5F5F5; z-index:5; }
+    #table-container>table th.sticky-left{ position: sticky; left:0; z-index:11; }
+    #table-container>table th.sticky-corner{ position: sticky; top:0; left:0; z-index:12; }
+
+    .rank-top-1{ background:linear-gradient(45deg,#ffd605,#f9db42)!important; color:#000; font-weight:bold; }
+    .rank-top-2{ background:linear-gradient(45deg,#f9db42,#f7df62)!important; color:#000; font-weight:bold; }
+    .rank-top-3{ background:linear-gradient(45deg,#f7df62,#fde785)!important; color:#000; font-weight:bold; }
+
+    .numeric-negative{ color:#cf2525; font-weight:bold; }
+    .status-good{ color:#10b981; font-weight:bold; }
+    .status-medium{ color:#f59e0b; font-weight:bold; }
+    .status-bad{ color:#cf2525; font-weight:bold; }
+
+    /* Loading overlay */
+    .loading-overlay{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9998; justify-content:center; align-items:center; }
+    .loading-spinner{ width:60px; height:60px; border:6px solid #D4A017; border-top:6px solid #26A69A; border-radius:50%; animation: spin .8s linear infinite; }
+
+    /* Image modal */
+    .modal{ display:none; position:fixed; z-index:9999; padding-top:80px; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,.9); }
+    .modal-content{ margin:auto; display:block; max-width:90%; max-height:80vh; border-radius:12px; }
+    .close{ position:absolute; top:24px; right:48px; color:#D4A017; font-size:42px; font-weight:800; cursor:pointer; }
+
+    /* Chart modal */
+    .chart-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:10000; }
+    .chart-modal{
+      position:fixed; inset:5% 4%; background:#fff; color:#1A2A44; border-radius:16px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.35);
+      display:none; z-index:10001; border:1px solid #D4A017;
+    }
+    .chart-modal.show, .chart-backdrop.show{ display:block; }
+
+    @keyframes loginFadeIn{ from{opacity:0; transform:translate(-50%,-50%) scale(.95);} to{opacity:1; transform:translate(-50%,-50%) scale(1);} }
+    @keyframes spin{ 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
+
+    @media (max-width:768px){
+      #content{ margin-top:110px; padding:12px; }
+      #sidebar{ width:100%; top:64px; height:calc(100vh - 64px); padding:12px; }
+      #table-container { max-height: calc(100vh - 200px); }
+      #table-container>table th, #table-container>table td { padding:8px 6px; font-size:12px; }
     }
   </style>
-
-  <script>
-    (function () {
-      // ===== CONFIG =====
-      const GAS_URL = "https://script.google.com/macros/s/AKfycbxXcvvGDkmsJsALt11T0wb-HhP7_sPooUEwaI9t2DZ5jP1BCYFtz3gn3jsyhWR3e5pvTQ/exec";
-      const DEFAULT_BASE_WIDTH = 1152;   // change via ?w=1280 if you like
-      // ===================
-
-      function qpNumber(name, def) {
-        const v = new URL(location.href).searchParams.get(name);
-        const n = v === null ? NaN : Number(v);
-        return Number.isFinite(n) && n > 0 ? n : def;
-      }
-
-      function fit() {
-        const BASE_WIDTH = qpNumber('w', DEFAULT_BASE_WIDTH);
-        const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        const scale = Math.min(1, vw / BASE_WIDTH); // downscale only on narrow screens
-        if (scale < 0.999) {
-          document.body.classList.add('mobile');
-          document.documentElement.style.setProperty('--scale', scale.toFixed(4));
-          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
-        } else {
-          document.body.classList.remove('mobile');
-          document.documentElement.style.setProperty('--scale', '1');
-          document.documentElement.style.setProperty('--basew', BASE_WIDTH + 'px');
-        }
-      }
-
-      function init() {
-        fit();
-        document.getElementById('app').src = GAS_URL;
-      }
-
-      document.addEventListener('DOMContentLoaded', init, { passive: true });
-      window.addEventListener('resize', fit, { passive: true });
-      window.addEventListener('orientationchange', fit, { passive: true });
-    })();
-  </script>
 </head>
 <body>
-  <!-- Pinch rails: start your pinch with one finger on any edge (top/bottom/left/right).
-       The second finger can be anywhere—even over the table. -->
-  <div id="railTop"    class="rail" aria-hidden="true"></div>
-  <div id="railBottom" class="rail" aria-hidden="true"></div>
-  <div id="railLeft"   class="rail" aria-hidden="true"></div>
-  <div id="railRight"  class="rail" aria-hidden="true"></div>
+  <div id="app">
+    <!-- Login -->
+    <div id="login-container">
+      <div class="logo">Pulse Point</div>
+      <div class="input-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter your username">
+      </div>
+      <div class="input-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter your password">
+      </div>
+      <button onclick="login()">Login</button>
+    </div>
 
-  <div class="wrap">
-    <iframe id="app" title="Pulse Point App"
-            loading="eager" referrerpolicy="no-referrer" allowfullscreen></iframe>
+    <!-- Navbar -->
+    <div id="navbar">
+      <button id="toggle-nav" title="Toggle menu">☰</button>
+      <span class="logo">Pulse Point</span>
+      <div id="timestamp"></div>
+      <button id="btnHourlyChart" title="Show hourly analysis">Chart</button>
+      <button id="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Menus + Sidebar -->
+    <div id="top-menu"></div>
+    <div id="sidebar"><div id="sidebar-content"></div></div>
+
+    <!-- Content -->
+    <div id="content">
+      <!-- NetV2 filter panel -->
+      <div id="netv2-controls" style="display:none;"></div>
+
+      <!-- NetV2 Overall (collapsible) -->
+      <div id="netv2-overall" style="display:none;">
+        <div class="collapsible-header" onclick="toggleOverallBox()"
+             style="display:inline-flex;align-items:center;gap:10px;padding:8px 14px;border-radius:10px;background:#1b263b;border:1px solid rgba(212,160,23,0.6);color:#ffd605;font-weight:800;cursor:pointer;">
+          <span id="netv2-overall-title">Overall</span>
+          <span class="caret">▾</span>
+        </div>
+        <div id="netv2-overall-content" class="collapsible-content"></div>
+      </div>
+
+      <!-- Search -->
+      <div id="netv2-searchwrap" style="display:none;gap:8px;margin:8px 0 12px 0;">
+        <label for="netv2-search" style="font-weight:800;">Search:</label>
+        <input id="netv2-search" type="text" placeholder="Type to filter visible rows…" style="padding:10px 12px;border-radius:10px;border:1px solid #cfd1d7;color:#0f172a;min-width:220px;">
+      </div>
+
+      <!-- Tools -->
+      <div id="table-tools" style="display:none;">
+        <span id="updateTimeBadge">Update Time : —</span>
+      </div>
+
+      <!-- Table -->
+      <div id="table-container"></div>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div></div>
+
+    <!-- Image modal -->
+    <div id="imgModal" class="modal" role="dialog" aria-modal="true">
+      <span class="close" onclick="closeModal(); event.stopPropagation();">&times;</span>
+      <img id="modalImage" class="modal-content" alt="Screenshot preview">
+    </div>
   </div>
+
+  <!-- Chart Modal (outside app) -->
+  <div id="chartBackdrop" class="chart-backdrop"></div>
+  <div id="chartModal" class="chart-modal" role="dialog" aria-modal="true" aria-label="Hourly Analysis">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.5rem;flex-wrap:wrap;">
+      <div>
+        <strong style="font-size:1.05rem;">Hourly Distribution</strong>
+        <div style="opacity:.75;font-size:.9rem;">Hourly Metrics</div>
+      </div>
+      <div>
+        <button id="btnExportCsv" class="btn">Export CSV</button>
+        <button id="btnChartClose" class="btn">Close</button>
+      </div>
+    </div>
+    <div class="panel-grid" style="display:grid;gap:.75rem;">
+      <div class="filters" style="border:1px dashed #d8d9df;border-radius:12px;padding:.6rem .75rem;background:#fafafa;">
+        <div class="row" style="display:flex;flex-wrap:wrap;gap:.75rem;">
+          <label>Day
+            <select id="chartFilterDay">
+              <option value="Analysis Today">Analysis Today</option>
+              <option value="Analysis Yesterday">Analysis Yesterday</option>
+            </select>
+          </label>
+          <label>Brand
+            <select id="chartFilterBrand"><option value="ALL">All Brands</option></select>
+          </label>
+          <label>Metric
+            <select id="chartFilterMetric">
+              <option value="registered_count">Registered Count (E)</option>
+              <option value="first_deposit_count">First Deposit Count (F)</option>
+              <option value="deposit_count">Deposit Count (G)</option>
+              <option value="deposit_amount">Deposit Amount (H)</option>
+              <option value="withdrawal_count">Withdrawal Count (I)</option>
+              <option value="withdrawal_amount">Withdrawal Amount (J)</option>
+              <option value="unique_player">Unique Player (K)</option>
+              <option value="turnover">Turnover (N)</option>
+              <option value="company_win_loss">Company Win/Loss (O)</option>
+              <option value="bonus">Bonus (P)</option>
+              <option value="net_loss">Net Loss (Q)</option>
+            </select>
+          </label>
+        </div>
+        <div class="row" style="display:flex;gap:1rem;align-items:center;margin-top:.5rem;">
+          <label><input type="checkbox" id="chkShowTable"> Show hour table</label>
+          <label><input type="checkbox" id="chkStacked"> Stack brands</label>
+          <label><input type="checkbox" id="chkSmooth"> Smooth lines</label>
+        </div>
+      </div>
+      <div id="kpiBar" style="display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;"></div>
+    </div>
+    <div class="chart-area" style="height:54vh;min-height:320px;border:1px solid #e6e7ec;border-radius:12px;padding:.5rem;background:#fff;">
+      <canvas id="chartHourlyCanvas"></canvas>
+    </div>
+    <div id="hourTableWrap" class="table-area" style="display:none;margin-top:.6rem;border:1px solid #e6e7ec;border-radius:12px;background:#fff;">
+      <div class="table-scroll" style="max-height:28vh;overflow:auto;">
+        <table class="hour-table" id="hourTable" style="width:100%;border-collapse:collapse;font-size:.92rem;"></table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+/* ======================== API (GitHub Pages) ======================== */
+const BASE_URL = 'https://script.google.com/macros/s/AKfycbyQf1Hi15rMeyfPpmEX1Mh5lg0gKECRQrVb7HAnqlPJc_GBbcFnOaOx1x0H9ib6A9bA/exec';
+
+/** Generic GET helper. Backend should return JSON like {error?:string, ...data} */
+async function api(action, params = {}) {
+  const q = new URLSearchParams({ action, ...params });
+  const url = BASE_URL + '?' + q.toString();
+  const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit' });
+  if (!res.ok) throw new Error('Network ' + res.status + ' — ' + (await res.text()).slice(0,200));
+  const data = await res.json();
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+/* ======================== CONFIG ======================== */
+const groups = {
+  '📊 View Live Stats': ['🚀 Brand Battle (Stats)'],
+  'Competitor Brands': ['Top 1', 'Top 2', 'Top 3', 'Top 4', 'Top 5'],
+  'Leaderboard': ['Today', 'Yesterday'],
+  'Domain RealTime Info': ['Unreachable Domains', 'Crickex', 'BetJILI', 'Mostplay', 'S10', 'BetVisa', 'Jeetwin']
+};
+const highlightValues = [
+  'BA JI','JEET BUZZ','CRICKEX','MCW','BET JILI','JEET WIN','MOSTPLAY','BET VISA',
+  'SIX6S','KHELA GHOR','BANGLAWIN','BANGLABET88','JEET BANGLA','MXW','PB',
+  'HEY BAJI','BANGLA SLOT','DARAZ PLAY','KHELO VIP','BENGAL BET','SUPER BAJI',
+  'FANCY WIN','E28','OZWIN365','SLOT BAJI','BET JDB','BET NAGA','JW','JEET WAY','WKTS','BH'
+];
+const domainInfoSheets = ['Crickex', 'BetJILI', 'Mostplay', 'S10', 'BetVisa', 'Jeetwin'];
+const sheetsToFreezeHeader = [
+  'Today','Yesterday','Analysis Today','Analysis Yesterday',
+  'Real Time Net Analysis','Real Time By Currency',
+  '🚀 Brand Battle (Stats)',
+  'Unreachable Domains','Crickex','Mostplay','S10','BetVisa','Jeetwin'
+];
+
+/* ======================== STATE ======================== */
+let currentSheet = null;
+let currentSpreadsheetId = null;
+let refreshInterval = null;
+let currentHeader = null;
+let sheetListCache = [];
+let isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+const NETV2_UI = { overallOpen: JSON.parse(localStorage.getItem('NETV2_OVERALL_OPEN') || 'true') };
+const TABLE_SORT = { col: null, dir: 'asc' };
+let NETV2_SEARCH = '';
+
+/* ======================== UTIL ======================== */
+function updateTimestamp() {
+  const now = new Date();
+  const options = { timeZone: 'Asia/Singapore', weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true };
+  const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(now);
+  const formatted = `${parts.find(p=>p.type==='weekday').value}, ${parts.find(p=>p.type==='month').value} ${parts.find(p=>p.type==='day').value}, ${parts.find(p=>p.type==='year').value} at ${parts.find(p=>p.type==='hour').value}:${parts.find(p=>p.type==='minute').value}:${parts.find(p=>p.type==='second').value} ${parts.find(p=>p.type==='dayPeriod').value}`;
+  document.getElementById('timestamp').textContent = formatted;
+}
+function isValidUrl(str){ return typeof str === 'string' && /^https?:\/\//i.test(str); }
+function parseNumeric(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    let v = value.trim();
+    const paren = /^\((.*)\)$/.test(v); if (paren) v = v.replace(/^\(|\)$/g, '');
+    v = v.replace(/,/g, '').replace(/%/g, '').trim();
+    const num = parseFloat(v);
+    if (isNaN(num)) return null;
+    if (/^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(v)) return paren ? -num : num;
+    return null;
+  }
+  return null;
+}
+function formatPercent(raw, numeric) {
+  if (numeric == null) return '';
+  let v;
+  if (typeof raw === 'string' && raw.includes('%')) {
+    const parsed = parseFloat(raw.replace(/,/g,'').replace('%','').trim());
+    v = isNaN(parsed) ? numeric : parsed;
+  } else if (Math.abs(numeric) <= 1) { v = numeric * 100; }
+  else { v = numeric; }
+  const out = v.toFixed(2) + '%';
+  return v < 0 ? `<span class="numeric-negative">${out}</span>` : out;
+}
+function rowsSignature(rows){ try { if (!Array.isArray(rows)) return '0'; const len=rows.length, head=len?JSON.stringify(rows[0]).length:0, tail=len?JSON.stringify(rows[len-1]).length:0; return `${len}:${head}:${tail}`; } catch{ return String(rows?.length||0); } }
+function objectSignature(obj){ try { return JSON.stringify(obj).length.toString(); } catch{ return 'x'; } }
+
+/* ======================== MENUS/SIDEBAR ======================== */
+function createTopMenu(sheetList) {
+  const topMenu = document.getElementById('top-menu');
+  topMenu.innerHTML = '';
+  for (const [groupName, sheets] of Object.entries(groups)) {
+    const groupDiv = document.createElement('div'); groupDiv.className = 'top-menu-group';
+    const header = document.createElement('button'); header.className = 'top-menu-group-header'; header.textContent = groupName;
+    header.onclick = (e) => {
+      e.preventDefault();
+      const c = header.nextElementSibling;
+      c.classList.toggle('open'); header.classList.toggle('open');
+    };
+    const content = document.createElement('div'); content.className = 'top-menu-group-content';
+    sheets.forEach(sheet => {
+      const info = sheetList.find(s => s.name === sheet);
+      if (info) {
+        const btn = document.createElement('button'); btn.textContent = sheet;
+        btn.onclick = () => {
+          loadSheet(info.name, info.spreadsheetId);
+          document.querySelectorAll('#top-menu button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        };
+        content.appendChild(btn);
+      }
+    });
+    groupDiv.appendChild(header); groupDiv.appendChild(content); topMenu.appendChild(groupDiv);
+  }
+  // auto-open first
+  const firstHeader = topMenu.querySelector('.top-menu-group-header');
+  if (firstHeader) {
+    firstHeader.classList.add('open'); firstHeader.nextElementSibling.classList.add('open');
+    const firstBtn = firstHeader.nextElementSibling.querySelector('button');
+    if (firstBtn) {
+      firstBtn.classList.add('active');
+      const info = sheetList.find(s => s.name === firstBtn.textContent);
+      if (info) loadSheet(info.name, info.spreadsheetId);
+    }
+  }
+}
+function createSidebar(sheetList) {
+  const wrap = document.getElementById('sidebar-content');
+  wrap.innerHTML = '';
+  for (const [group, sheets] of Object.entries(groups)) {
+    const div = document.createElement('div'); div.className = 'group';
+    const h = document.createElement('h3'); h.textContent = group;
+    h.onclick = () => {
+      const ul = h.nextElementSibling;
+      ul.style.display = ul.style.display === 'none' ? 'block' : 'none';
+      h.classList.toggle('open');
+    };
+    const ul = document.createElement('ul'); ul.className = 'sheet-list';
+    sheets.forEach(name => {
+      const info = sheetList.find(s => s.name === name);
+      if (info) {
+        const li = document.createElement('li'); li.textContent = name;
+        li.onclick = () => { loadSheet(info.name, info.spreadsheetId); toggleSidebar(); };
+        ul.appendChild(li);
+      }
+    });
+    div.appendChild(h); div.appendChild(ul); wrap.appendChild(div);
+  }
+}
+
+/* ======================== RENDER TABLE ======================== */
+function formatValue(value, columnHeader, row, rowIndex, colIndex) {
+  if ((currentSheet === '🚀 Brand Battle (Stats)' || currentSheet === 'Net Net AnalysisV2') && (colIndex === 5 || colIndex === 11)) {
+    return value == null ? '' : String(value);
+  }
+  const numericValue = parseNumeric(value);
+  const isCompetitorSheet = groups['Competitor Brands'].includes(currentSheet);
+
+  if (isCompetitorSheet && columnHeader && /different/i.test(columnHeader) && numericValue !== null) {
+    const formatted = Math.round(numericValue).toLocaleString();
+    return numericValue < 0 ? `<span class="numeric-negative">${formatted}</span>` : formatted;
+  }
+  if (['Today','Yesterday'].includes(currentSheet)) {
+    if ([2,4,6,9,11].includes(colIndex) && numericValue !== null) {
+      return Math.round(numericValue).toLocaleString('en-US');
+    }
+  }
+  if (['Analysis Today','Analysis Yesterday'].includes(currentSheet)) {
+    if ([4,5,6,8,10,11].includes(colIndex) && numericValue !== null) {
+      return Math.round(numericValue).toLocaleString('en-US');
+    }
+    if (colIndex === 1 && typeof value === 'string') {
+      const d = new Date(value); return isNaN(d) ? value : d.toISOString().split('T')[0];
+    }
+    if (colIndex === 2 && numericValue !== null) {
+      if (numericValue >= 0 && numericValue <= 23) {
+        const h = String(numericValue).padStart(2,'0'); return `${h}:00 ${numericValue < 12 ? 'AM' : 'PM'}`;
+      }
+    }
+    if (colIndex === 17 && numericValue !== null) return formatPercent(value, numericValue);
+  }
+  if (currentSheet === 'Real Time Net Analysis') {
+    if (colIndex === 1 && numericValue !== null) return Math.round(numericValue).toLocaleString('en-US');
+    if ([5,11].includes(colIndex) && numericValue !== null) return formatPercent(value, numericValue);
+  }
+  if (groups['Domain RealTime Info'].includes(currentSheet)) {
+    if (colIndex === 3 && typeof value === 'string') {
+      const d = new Date(value); return isNaN(d) ? value : d.toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' });
+    }
+    if (colIndex === 2 && isValidUrl(value)) return `<a class="link-view" href="${value}" target="_blank" rel="noopener">View Link</a>`;
+    if (colIndex === 5 && typeof value === 'string' && value.includes('%ERROR%')) return `<span class="status-bad">${value}</span>`;
+  }
+  if (domainInfoSheets.includes(currentSheet)) {
+    if (colIndex === 2 && isValidUrl(value)) return `<a class="link-view" href="${value}" target="_blank" rel="noopener">View Link</a>`;
+    if ([3,6,9,12].includes(colIndex) && typeof value === 'string') {
+      const d = new Date(value); return isNaN(d) ? value : d.toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' });
+    }
+  }
+  if (isCompetitorSheet && [1,3,5,8,10].includes(colIndex) && numericValue !== null) {
+    const formatted = Math.round(numericValue).toLocaleString('en-US');
+    return numericValue < 0 ? `<span class="numeric-negative">${formatted}</span>` : `<span class="accounting-format">${formatted}</span>`;
+  }
+  if (currentSheet === 'Real Time By Currency' && colIndex === 4 && numericValue !== null) { return formatPercent(value, numericValue); }
+  if (columnHeader === 'Rank') { const n = parseNumeric(value); if (n !== null) return Math.floor(n); }
+
+  if (numericValue !== null) {
+    const formatted = Math.round(numericValue).toLocaleString();
+    return numericValue < 0 ? `<span class="numeric-negative">${formatted}</span>` : formatted;
+  }
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase();
+    if (lower === 'good') return '<span class="status-good">Good</span>';
+    if (lower === 'medium') return '<span class="status-medium">Medium</span>';
+    if (lower === 'bad') return '<span class="status-bad">Bad</span>';
+    if (isValidUrl(value)) {
+      if (/\.(jpg|jpeg|png|gif|webp)$/i.test(value)) return `<a class="link-view" onclick="showImage('${value}')">View Screenshot</a>`;
+      return `<a class="link-view" href="${value}" target="_blank" rel="noopener">View Link</a>`;
+    }
+  }
+  return value ?? '';
+}
+function compareCells(a, b) {
+  const na = parseNumeric(a), nb = parseNumeric(b);
+  if (na !== null && nb !== null) return na - nb;
+  const sa = String(a ?? '').toLowerCase(), sb = String(b ?? '').toLowerCase();
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+function sortRows(rows, colIdx, dir='asc') {
+  if (colIdx == null) return rows.slice();
+  const sorted = rows.slice().sort((r1, r2) => compareCells(r1[colIdx], r2[colIdx]));
+  return dir === 'desc' ? sorted.reverse() : sorted;
+}
+function applySearchRows(rows, query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter(r => r.some(c => String(c ?? '').toLowerCase().includes(q)));
+}
+function renderTable(header, data, isInitial = true) {
+  const container = document.getElementById('table-container');
+  currentHeader = header;
+
+  if (isInitial) {
+    container.innerHTML = '';
+    const table = document.createElement('table');
+    const thead = document.createElement('thead'); const trHead = document.createElement('tr');
+
+    header.forEach((h, idx) => {
+      const th = document.createElement('th'); th.textContent = h || '';
+      th.classList.add('sticky-header'); if (idx === 0) { th.classList.add('sticky-left', 'sticky-corner'); }
+      if (TABLE_SORT.col === idx) { const c = document.createElement('span'); c.textContent = TABLE_SORT.dir==='asc'?' ▲':' ▼'; th.appendChild(c); }
+      if (currentSheet === '🚀 Brand Battle (Stats)' || currentSheet === 'Net Net AnalysisV2') {
+        th.style.cursor = 'pointer'; th.title = 'Click to sort';
+        th.onclick = () => {
+          if (TABLE_SORT.col === idx) TABLE_SORT.dir = (TABLE_SORT.dir === 'asc') ? 'desc' : 'asc';
+          else { TABLE_SORT.col = idx; TABLE_SORT.dir = 'asc'; }
+          renderTable(header, data = sortRows(data, TABLE_SORT.col, TABLE_SORT.dir), false);
+        };
+      }
+      trHead.appendChild(th);
+    });
+    thead.appendChild(trHead); table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    data.forEach((row) => {
+      const tr = document.createElement('tr');
+      if (header.includes('Rank')) {
+        const rankIndex = header.indexOf('Rank'); const rank = parseNumeric(row[rankIndex]);
+        if (rank === 1) tr.classList.add('rank-top-1');
+        else if (rank === 2) tr.classList.add('rank-top-2');
+        else if (rank === 3) tr.classList.add('rank-top-3');
+      }
+      row.forEach((cell, colIndex) => {
+        const td = document.createElement('td'); td.dataset.col = colIndex;
+        td.innerHTML = formatValue(cell, header[colIndex], row, 0, colIndex);
+        if (colIndex === 0) td.classList.add('sticky-left');
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody); container.appendChild(table);
+    document.getElementById('loadingOverlay').style.display = 'none';
+    return;
+  }
+
+  // incremental update (simple re-render for GitHub build)
+  container.innerHTML = '';
+  renderTable(header, data, true);
+}
+
+/* ======================== SCROLL PRESERVER ======================== */
+function withPreservedScroll(fn){
+  const cont = document.getElementById('table-container');
+  if (!cont) { fn(); return; }
+  const st = cont.scrollTop, sl = cont.scrollLeft;
+  fn();
+  cont.scrollTop = st; cont.scrollLeft = sl;
+}
+
+/* ======================== LOAD / REFRESH ======================== */
+async function loadSheet(sheetName, spreadsheetId) {
+  if (!isAuthenticated) { document.getElementById('login-container').style.display = 'block'; return; }
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  currentSheet = sheetName; currentSpreadsheetId = spreadsheetId;
+
+  try {
+    const result = await api('getSheetData', { sheetName, spreadsheetId });
+    if (!result || result.error) throw new Error(result?.error || 'No data');
+    // Optional rank sort for leaderboards/analysis
+    if (['Today','Yesterday','Analysis Today','Analysis Yesterday'].includes(currentSheet) && result.header.includes('Rank')) {
+      result.data.sort((a,b) => {
+        const idx = result.header.indexOf('Rank');
+        const A = parseFloat(a[idx]) || Infinity, B = parseFloat(b[idx]) || Infinity;
+        return A - B;
+      });
+    }
+    if (sheetName === '🚀 Brand Battle (Stats)' || sheetName === 'Net Net AnalysisV2') {
+      TABLE_SORT.col = 2; TABLE_SORT.dir = 'desc';
+      await buildNetV2Controls(result.header, result.data || []);
+      applyNetV2Filter(true);
+      await ensureOverallLoaded();
+      renderNetV2Overall();
+      document.getElementById('netv2-searchwrap').style.display = 'flex';
+      document.getElementById('table-tools').style.display = 'flex';
+      await refreshUpdateTime(true);
+      document.getElementById('netv2-overall').style.display = 'block';
+    } else {
+      document.getElementById('netv2-controls').style.display = 'none';
+      document.getElementById('netv2-overall').style.display = 'none';
+      document.getElementById('netv2-searchwrap').style.display = 'none';
+      document.getElementById('table-tools').style.display = 'none';
+      TABLE_SORT.col = null; TABLE_SORT.dir = 'asc'; NETV2_SEARCH = '';
+      renderTable(result.header, result.data, true);
+    }
+  } catch (e) {
+    document.getElementById('table-container').innerHTML = `<p style="color:#f87171">Failed to load: ${e.message}</p>`;
+  } finally {
+    document.getElementById('loadingOverlay').style.display = 'none';
+  }
+
+  // Poll every 5s
+  if (refreshInterval) clearInterval(refreshInterval);
+  refreshInterval = setInterval(async () => {
+    try {
+      const result = await api('getSheetData', { sheetName: currentSheet, spreadsheetId: currentSpreadsheetId });
+      if (!result || result.error) return;
+      if (['Today','Yesterday','Analysis Today','Analysis Yesterday'].includes(currentSheet) && result.header.includes('Rank')) {
+        result.data.sort((a,b) => {
+          const idx = result.header.indexOf('Rank');
+          const A = parseFloat(a[idx]) || Infinity, B = parseFloat(b[idx]) || Infinity;
+          return A - B;
+        });
+      }
+      if (currentSheet === '🚀 Brand Battle (Stats)' || currentSheet === 'Net Net AnalysisV2') {
+        NETV2.header = result.header; NETV2.raw = result.data || [];
+        withPreservedScroll(() => applyNetV2Filter(false));
+        refreshOverallIfNeeded();
+        refreshUpdateTime(false);
+      } else {
+        withPreservedScroll(() => renderTable(result.header, result.data, false));
+      }
+    } catch {}
+  }, 5000);
+}
+
+/* ======================== IMAGE MODAL & SIDEBAR ======================== */
+function showImage(url){ const m=document.getElementById('imgModal'); const img=document.getElementById('modalImage'); img.src=url; m.style.display='block'; }
+function closeModal(){ document.getElementById('imgModal').style.display='none'; }
+function toggleSidebar(){
+  const sidebar = document.getElementById('sidebar');
+  const active = sidebar.classList.toggle('active');
+  if (active) { document.getElementById('content').style.marginLeft = '320px'; }
+  else { document.getElementById('content').style.marginLeft = '0'; }
+}
+document.getElementById('toggle-nav').onclick = toggleSidebar;
+
+/* ======================== AUTH (client-only gate) ======================== */
+function login() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const validUsers = { 'admin': '11a', 'cx2025': '123qwe' }; // client-side gate only
+  if (validUsers[username] === password) {
+    isAuthenticated = true;
+    localStorage.setItem('isAuthenticated','true');
+    document.body.classList.add('auth');
+    document.getElementById('login-container').style.display = 'none';
+    document.getElementById('logout-btn').style.display = 'block';
+    if (!window.__tsInt) { updateTimestamp(); window.__tsInt = setInterval(updateTimestamp, 1000); }
+    initAfterLogin();
+  } else {
+    alert('Invalid username or password');
+  }
+}
+function logout() {
+  isAuthenticated = false; localStorage.removeItem('isAuthenticated');
+  if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
+  if (window.__tsInt) { clearInterval(window.__tsInt); window.__tsInt = null; }
+  try { if (CHART_STATE?.chart) { CHART_STATE.chart.destroy(); CHART_STATE.chart = null; } } catch(e){}
+  document.getElementById('chartModal').classList.remove('show');
+  document.getElementById('chartBackdrop').classList.remove('show');
+  ['top-menu','sidebar-content','table-container'].forEach(id => { const el=document.getElementById(id); if (el) el.innerHTML=''; });
+  document.getElementById('updateTimeBadge').textContent = 'Update Time : —';
+  document.getElementById('netv2-controls').style.display = 'none';
+  document.getElementById('netv2-overall').style.display = 'none';
+  document.getElementById('netv2-searchwrap').style.display = 'none';
+  document.body.classList.remove('auth');
+  document.getElementById('logout-btn').style.display = 'none';
+  document.getElementById('login-container').style.display = 'block';
+  document.getElementById('username').value = '';
+  document.getElementById('password').value = '';
+  currentSheet = null; currentSpreadsheetId = null; sheetListCache = [];
+}
+async function initAfterLogin(){
+  try {
+    const sheetList = await api('getSheetList');
+    sheetListCache = sheetList || [];
+    createTopMenu(sheetListCache);
+    createSidebar(sheetListCache);
+    initHourlyChart();
+  } catch (e) {
+    alert('Failed to load sheets: ' + e.message);
+  }
+}
+(function initAuthGate(){
+  if (!isAuthenticated) {
+    document.body.classList.remove('auth');
+    document.getElementById('login-container').style.display = 'block';
+    document.getElementById('logout-btn').style.display = 'none';
+  } else {
+    document.body.classList.add('auth');
+    document.getElementById('login-container').style.display = 'none';
+    document.getElementById('logout-btn').style.display = 'block';
+    if (!window.__tsInt) { updateTimestamp(); window.__tsInt = setInterval(updateTimestamp, 1000); }
+    initAfterLogin();
+  }
+})();
+
+/* ======================== HOURLY CHART ======================== */
+const ANALYSIS_COLS = {
+  brand: 0, date: 1, hour: 2,
+  registered_count: 4, first_deposit_count: 5, deposit_count: 6, deposit_amount: 7,
+  withdrawal_count: 8, withdrawal_amount: 9, unique_player: 10,
+  turnover: 13, company_win_loss: 14, bonus: 15, net_loss: 16
+};
+const CHART_STATE = { day:'Analysis Today', brand:'ALL', metric:'registered_count', dataToday:null, dataYday:null, chart:null };
+function findSheetMetaByName(name){ return (sheetListCache||[]).find(s=>s.name===name)||null; }
+async function getSheetDataPromise(sheetName, spreadsheetId){ return api('getSheetData', { sheetName, spreadsheetId }); }
+async function loadAnalysisSheets(){
+  const metaToday = findSheetMetaByName('Analysis Today');
+  const metaYday = findSheetMetaByName('Analysis Yesterday');
+  if (!metaToday || !metaYday) return { today:[], yday:[] };
+  const [todayRes, ydayRes] = await Promise.all([
+    getSheetDataPromise(metaToday.name, metaToday.spreadsheetId),
+    getSheetDataPromise(metaYday.name, metaYday.spreadsheetId)
+  ]);
+  return { today: todayRes?.data||[], yday: ydayRes?.data||[] };
+}
+function buildHourlySeries(rows, brand, metricKey){
+  const allBrands = Array.from(new Set(rows.map(r => (r?.[ANALYSIS_COLS.brand] ?? '')).map(s=>String(s).trim()).filter(Boolean))).sort();
+  const brands = brand==='ALL' ? allBrands : [brand];
+  const labels = Array.from({length:24}, (_,h) => `${String(h).padStart(2,'0')}:00 ${h<12?'AM':'PM'}`);
+  const datasets = brands.map(b => {
+    const filtered = rows.filter(r => String(r?.[ANALYSIS_COLS.brand] ?? '').trim() === b);
+    const buckets = Array.from({length:24}, () => 0);
+    for (const r of filtered) {
+      const hRaw = r?.[ANALYSIS_COLS.hour]; const h = typeof hRaw === 'number' ? hRaw : parseInt(String(hRaw).trim(), 10);
+      if (!Number.isFinite(h) || h<0 || h>23) continue;
+      const val = parseNumeric(r?.[ANALYSIS_COLS[metricKey]]);
+      if (val == null) continue;
+      buckets[h] += val;
+    }
+    return { label:b, data:buckets, tension:0.35, pointRadius:3, pointHoverRadius:5, borderWidth:2, fill:false };
+  });
+  return { labels, datasets };
+}
+function metricPretty(key){
+  return ({
+    registered_count:'Registered Count', first_deposit_count:'First Deposit Count', deposit_count:'Deposit Count',
+    deposit_amount:'Deposit Amount', withdrawal_count:'Withdrawal Count', withdrawal_amount:'Withdrawal Amount',
+    unique_player:'Unique Player', turnover:'Turnover', company_win_loss:'Company Win/Loss', bonus:'Bonus', net_loss:'Net Loss'
+  })[key] || key;
+}
+function ensureHourlyChart(ctx, cfg, reuse){
+  const stacked = document.getElementById('chkStacked')?.checked ?? false;
+  const smooth = document.getElementById('chkSmooth')?.checked ?? false;
+  const datasets = cfg.datasets.map(d => ({ ...d, tension: smooth ? 0.35 : 0, fill: stacked ? true : false }));
+  const options = {
+    responsive:true, maintainAspectRatio:false, animation:false, interaction:{ mode:'index', intersect:false },
+    plugins:{ title:{ display:true, text:cfg.title }, legend:{ display: datasets.length>1 } },
+    scales:{ x:{ grid:{ display:true } }, y:{ beginAtZero:true, grid:{ display:true } } }
+  };
+  if (reuse) {
+    reuse.data.labels = cfg.labels;
+    reuse.data.datasets = datasets;
+    reuse.options.plugins.title.text = cfg.title;
+    reuse.options.plugins.legend.display = datasets.length>1;
+    reuse.options.scales.x.stacked = stacked;
+    reuse.options.scales.y.stacked = stacked;
+    reuse.update();
+    return reuse;
+  }
+  return new Chart(ctx, {
+    type:'line',
+    data:{ labels:cfg.labels, datasets },
+    options:{ ...options, scales:{ ...options.scales, x:{ ...options.scales.x, stacked }, y:{ ...options.scales.y, stacked } } }
+  });
+}
+function sum(arr){ return arr.reduce((a,b)=>a+b,0); }
+function avg(arr){ return arr.length ? sum(arr)/arr.length : 0; }
+function toHrLabel(i){ const h=Number(i)||0; return `${String(h).padStart(2,'0')}:00 ${h<12?'AM':'PM'}`; }
+function computeStats(labels, datasets){
+  const byHour = labels.map((_,idx)=>sum(datasets.map(ds=>Number(ds.data[idx]||0))));
+  const total = sum(byHour), average = avg(byHour);
+  let minVal = Infinity, minIdx = 0, maxVal = -Infinity, maxIdx = 0;
+  byHour.forEach((v,i)=>{ if (v<minVal) {minVal=v; minIdx=i;} if (v>maxVal) {maxVal=v; maxIdx=i;} });
+  return { total, average, minHour: toHrLabel(minIdx), minVal, maxHour: toHrLabel(maxIdx), maxVal, points: byHour.filter(v=>Number.isFinite(v)).length };
+}
+function formatNum(n){ return Number(n).toLocaleString(); }
+function updateKpis(labels, datasets){
+  const kpiWrap = document.getElementById('kpiBar'); if (!kpiWrap) return;
+  const s = computeStats(labels, datasets);
+  kpiWrap.innerHTML = `
+    <div class="kpi" style="border:1px solid #e6e7ec;border-radius:12px;padding:.5rem .6rem;background:#fff;"><div class="label" style="font-size:.75rem;color:#667085;margin-bottom:2px;">Total</div><div class="value" style="font-weight:800;font-size:1.05rem;color:#0f172a;">${formatNum(s.total)}</div><div class="sub" style="font-size:.75rem;color:#6b7280;">Sum of all hours</div></div>
+    <div class="kpi" style="border:1px solid #e6e7ec;border-radius:12px;padding:.5rem .6rem;background:#fff;"><div class="label" style="font-size:.75rem;color:#667085;margin-bottom:2px;">Avg / Hour</div><div class="value" style="font-weight:800;font-size:1.05rem;color:#0f172a;">${formatNum(Math.round(s.average))}</div><div class="sub" style="font-size:.75rem;color:#6b7280;">24-hour average</div></div>
+    <div class="kpi" style="border:1px solid #e6e7ec;border-radius:12px;padding:.5rem .6rem;background:#fff;"><div class="label" style="font-size:.75rem;color:#667085;margin-bottom:2px;">Peak</div><div class="value" style="font-weight:800;font-size:1.05rem;color:#0f172a;">${formatNum(s.maxVal)}</div><div class="sub" style="font-size:.75rem;color:#6b7280;">${s.maxHour}</div></div>
+    <div class="kpi" style="border:1px solid #e6e7ec;border-radius:12px;padding:.5rem .6rem;background:#fff;"><div class="label" style="font-size:.75rem;color:#667085;margin-bottom:2px;">Low</div><div class="value" style="font-weight:800;font-size:1.05rem;color:#0f172a;">${formatNum(s.minVal)}</div><div class="sub" style="font-size:.75rem;color:#6b7280;">${s.minHour}</div></div>
+    <div class="kpi" style="border:1px solid #e6e7ec;border-radius:12px;padding:.5rem .6rem;background:#fff;"><div class="label" style="font-size:.75rem;color:#667085;margin-bottom:2px;">Data Points</div><div class="value" style="font-weight:800;font-size:1.05rem;color:#0f172a;">${formatNum(s.points)}</div><div class="sub" style="font-size:.75rem;color:#6b7280;">non-empty hours</div></div>`;
+}
+function renderHourTable(labels, datasets){
+  const wrap = document.getElementById('hourTableWrap');
+  const tbl = document.getElementById('hourTable');
+  if (!wrap || !tbl) return;
+  const show = document.getElementById('chkShowTable')?.checked ?? false;
+  wrap.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  const headers = ['Hour', ...datasets.map(d => d.label), 'Total'];
+  let html = '<thead><tr>' + headers.map(h=>`<th style="border:1px solid #e6e7ec;padding:.5rem;">${h}</th>`).join('') + '</tr></thead>';
+  html += '<tbody>';
+  for (let i=0; i<labels.length; i++){
+    const rowVals = datasets.map(d => Number(d.data[i]||0));
+    const total = sum(rowVals);
+    html += `<tr><td style="border:1px solid #e6e7ec;padding:.5rem;">${labels[i]}</td>` + rowVals.map(v=>`<td style="border:1px solid #e6e7ec;padding:.5rem;text-align:right;">${formatNum(v)}</td>`).join('') + `<td style="border:1px solid #e6e7ec;padding:.5rem;text-align:right;">${formatNum(total)}</td></tr>`;
+  }
+  html += '</tbody>'; tbl.innerHTML = html;
+}
+function exportCsv(labels, datasets, title){
+  const headers = ['Hour', ...datasets.map(d=>d.label), 'Total'];
+  const rows = [headers.join(',')];
+  for (let i=0;i<labels.length;i++){
+    const rowVals = datasets.map(d=>Number(d.data[i]||0));
+    const total = sum(rowVals);
+    rows.push([labels[i], ...rowVals, total].join(','));
+  }
+  const blob = new Blob([`"${title.replaceAll('"','""')}"\n` + rows.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = `hourly-${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+function populateBrandDropdown(allRows){
+  const sel = document.getElementById('chartFilterBrand');
+  sel.innerHTML = '<option value="ALL">All Brands</option>';
+  const brands = Array.from(new Set(allRows.map(r => (r?.[ANALYSIS_COLS.brand] ?? '')).map(s=>String(s).trim()).filter(Boolean))).sort();
+  for (const b of brands) { const opt = document.createElement('option'); opt.value=b; opt.textContent=b; sel.appendChild(opt); }
+}
+function refreshHourlyChart(){
+  const canvas = document.getElementById('chartHourlyCanvas'); if (!canvas) return;
+  const rows = (CHART_STATE.day==='Analysis Today') ? (CHART_STATE.dataToday||[]) : (CHART_STATE.dataYday||[]);
+  const { labels, datasets } = buildHourlySeries(rows, CHART_STATE.brand, CHART_STATE.metric);
+  const title = `${metricPretty(CHART_STATE.metric)} • ${CHART_STATE.brand === 'ALL' ? 'All Brands' : CHART_STATE.brand} • ${CHART_STATE.day}`;
+  CHART_STATE.chart = ensureHourlyChart(canvas.getContext('2d'), { labels, datasets, title }, CHART_STATE.chart);
+  updateKpis(labels, datasets); renderHourTable(labels, datasets);
+  const btnCsv = document.getElementById('btnExportCsv'); if (btnCsv) btnCsv.onclick = () => exportCsv(labels, datasets, title);
+}
+async function initHourlyChart(){
+  const openBtn = document.getElementById('btnHourlyChart');
+  const backdrop= document.getElementById('chartBackdrop');
+  const modal = document.getElementById('chartModal');
+  const closeBtn= document.getElementById('btnChartClose');
+  const selDay = document.getElementById('chartFilterDay');
+  const selBrand= document.getElementById('chartFilterBrand');
+  const selMetric=document.getElementById('chartFilterMetric');
+  if (!openBtn || !modal) return;
+  let loaded = false;
+  function openModal() {
+    modal.classList.add('show'); backdrop.classList.add('show');
+    (async () => {
+      if (!loaded) {
+        document.getElementById('loadingOverlay').style.display = 'flex';
+        try {
+          const { today, yday } = await loadAnalysisSheets();
+          CHART_STATE.dataToday = today||[]; CHART_STATE.dataYday = yday||[];
+          populateBrandDropdown([...(CHART_STATE.dataToday||[]), ...(CHART_STATE.dataYday||[])]);
+          loaded = true;
+        } catch(e) { alert('Failed to load Analysis sheets.'); }
+        finally { document.getElementById('loadingOverlay').style.display = 'none'; }
+      }
+      refreshHourlyChart();
+    })();
+  }
+  function closeModal(){ modal.classList.remove('show'); backdrop.classList.remove('show'); }
+  openBtn.addEventListener('click', openModal);
+  closeBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', closeModal);
+  document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeModal(); });
+  [selDay, selBrand, selMetric].forEach(sel => {
+    sel.addEventListener('change', () => {
+      CHART_STATE.day = selDay.value; CHART_STATE.brand = selBrand.value; CHART_STATE.metric = selMetric.value;
+      refreshHourlyChart();
+    });
+  });
+  ['chkShowTable','chkStacked','chkSmooth'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.addEventListener('change', () => refreshHourlyChart());
+  });
+}
+
+/* ======================== Net Net AnalysisV2 ======================== */
+const NETV2 = { segment:'CX', currency:'ALL', header:null, raw:[], currencyMap:null, overallMap:null, sig:null, overallSig:null, updateTimeSig:'' };
+const _norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function findCol(header, candidates){
+  const H = header.map(h => _norm(h));
+  for (const c of candidates) { const i = H.findIndex(h => h === _norm(c)); if (i !== -1) return i; }
+  if (candidates.some(c => _norm(c).includes('currency'))) { const i = H.findIndex(h => h.includes('curren')); if (i !== -1) return i; }
+  if (candidates.some(c => ['call','section','segment','group'].includes(_norm(c)))) {
+    const i = H.findIndex(h => h.includes('call') || h.includes('segment') || h.includes('section') || h.includes('group'));
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+function segMatch(selected, value){
+  const v = String(value||'').trim().toUpperCase();
+  if (selected === 'ALL') return true;
+  if (selected === 'MCW') return v === 'MCW' || v === 'MCX';
+  return v === selected;
+}
+function loadNetV2CurrencyMap() {
+  return new Promise((resolve) => {
+    if (NETV2.currencyMap) return resolve(NETV2.currencyMap);
+    api('getNetV2Currencies')
+      .then(res => { NETV2.currencyMap = res || {CX:[],MCW:[],BAJI:[]}; resolve(NETV2.currencyMap); })
+      .catch(() => { NETV2.currencyMap = {CX:[],MCW:[],BAJI:[]}; resolve(NETV2.currencyMap); });
+  });
+}
+async function ensureOverallLoaded(){
+  if (NETV2.overallMap) return NETV2.overallMap;
+  try {
+    const res = await api('getNetV2Overall');
+    NETV2.overallMap = res || {CX:{header:[],rows:[]}, MCW:{header:[],rows:[]}, BAJI:{header:[],rows:[]}};
+    NETV2.overallSig = objectSignature(NETV2.overallMap);
+  } catch {
+    NETV2.overallMap = {CX:{header:[],rows:[]}, MCW:{header:[],rows:[]}, BAJI:{header:[],rows:[]}};
+    NETV2.overallSig = objectSignature(NETV2.overallMap);
+  }
+  return NETV2.overallMap;
+}
+function refreshOverallIfNeeded(){
+  api('getNetV2Overall').then(res => {
+    const sig = objectSignature(res);
+    if (sig !== NETV2.overallSig) {
+      NETV2.overallSig = sig; NETV2.overallMap = res; renderNetV2Overall();
+    }
+  }).catch(()=>{});
+}
+function forceNetV2TableRefresh(){
+  if (!(currentSheet === '🚀 Brand Battle (Stats)' || currentSheet === 'Net Net AnalysisV2')) return;
+  api('getSheetData', { sheetName: currentSheet, spreadsheetId: currentSpreadsheetId })
+    .then(result => {
+      if (!result) return;
+      NETV2.header = result.header; NETV2.raw = result.data || [];
+      withPreservedScroll(() => applyNetV2Filter(false));
+    }).catch(()=>{});
+}
+async function refreshUpdateTime(initial){
+  api('getNetV2UpdateTime').then(res => {
+    const val = String(res?.updateTime || '');
+    const badge = document.getElementById('updateTimeBadge');
+    if (val && val !== NETV2.updateTimeSig) {
+      NETV2.updateTimeSig = val; if (badge) badge.textContent = `Update Time : ${val}`;
+      forceNetV2TableRefresh();
+    } else if (initial && val) {
+      if (badge) badge.textContent = `Update Time : ${val}`; NETV2.updateTimeSig = val;
+    }
+  }).catch(()=>{});
+}
+function miniFormatCell(v){
+  if (v == null) return '';
+  if (typeof v === 'string' && v.includes('%')) return v;
+  const n = parseNumeric(v); if (n == null) return String(v);
+  const out = Math.round(n).toLocaleString(); return n < 0 ? `<span class="num-neg">${out}</span>` : out;
+}
+function toggleOverallBox(force){
+  const box = document.getElementById('netv2-overall');
+  const content = document.getElementById('netv2-overall-content');
+  if (!box || !content) return;
+  NETV2_UI.overallOpen = (typeof force === 'boolean') ? force : !NETV2_UI.overallOpen;
+  localStorage.setItem('NETV2_OVERALL_OPEN', JSON.stringify(NETV2_UI.overallOpen));
+  box.classList.toggle('open', NETV2_UI.overallOpen);
+  content.style.display = NETV2_UI.overallOpen ? 'block' : 'none';
+}
+function renderNetV2Overall(){
+  const box = document.getElementById('netv2-overall');
+  const titleEl = document.getElementById('netv2-overall-title');
+  const content = document.getElementById('netv2-overall-content');
+  if (!box || !titleEl || !content) return;
+  if (!(currentSheet === '🚀 Brand Battle (Stats)' || currentSheet === 'Net Net AnalysisV2')) { box.style.display = 'none'; return; }
+  const seg = NETV2.segment;
+  const map = NETV2.overallMap || {};
+  const sortBy3rdDesc = rows => {
+    if (!Array.isArray(rows)) return [];
+    return rows.slice().sort((a,b)=>{
+      const na = parseNumeric(a?.[2]); const nb = parseNumeric(b?.[2]);
+      if (na === null && nb === null) return 0;
+      if (na === null) return 1;
+      if (nb === null) return -1;
+      return nb - na;
+    });
+  };
+  const renderBlock = (label, obj) => {
+    if (!obj || !obj.header || !obj.header.length) return '';
+    const rows = sortBy3rdDesc(obj.rows || []);
+    let html = `<div style="margin:6px 0 6px 2px; font-weight:800; color:#1a2a44;">${label}</div>`;
+    html += `<table class="mini-table"><thead><tr>${obj.header.map(h=>`<th>${h||''}</th>`).join('')}</tr></thead><tbody>`;
+    rows.forEach(r => { html += `<tr>${r.map(c=>`<td>${miniFormatCell(c)}</td>`).join('')}</tr>`; });
+    html += `</tbody></table>`;
+    return html;
+  };
+  if (seg === 'ALL') {
+    titleEl.textContent = `Overall — All`;
+    const html = [
+      renderBlock('CX', map.CX),
+      renderBlock('MCW', map.MCW),
+      renderBlock('BAJI', map.BAJI)
+    ].join('') || `<div style="opacity:.75;">No Overall data found.</div>`;
+    if (content.innerHTML !== html) content.innerHTML = html;
+    box.style.display = 'block';
+    toggleOverallBox(NETV2_UI.overallOpen);
+    return;
+  }
+  const dataObj = map[seg] || { header:[], rows:[] };
+  titleEl.textContent = `Overall — ${seg}`;
+  box.style.display = 'block';
+  if (!dataObj.header || !dataObj.header.length) {
+    const html = `<div style="opacity:.75;">No Overall data found for ${seg}.</div>`;
+    if (content.innerHTML !== html) content.innerHTML = html;
+    toggleOverallBox(NETV2_UI.overallOpen);
+    return;
+  }
+  const rows = sortBy3rdDesc(dataObj.rows || []);
+  let html = `<table class="mini-table"><thead><tr>${dataObj.header.map(h=>`<th>${h || ''}</th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(r=>{ html += `<tr>${r.map(c=>`<td>${miniFormatCell(c)}</td>`).join('')}</tr>`; });
+  html += `</tbody></table>`;
+  if (content.innerHTML !== html) content.innerHTML = html;
+  toggleOverallBox(NETV2_UI.overallOpen);
+}
+async function buildNetV2Controls(header, rows){
+  NETV2.header = header; NETV2.raw = Array.isArray(rows) ? rows : [];
+  const segList = ['ALL','CX','MCW','BAJI'];
+  const cmap = await loadNetV2CurrencyMap();
+  const unionCurrencies = Array.from(new Set([...(cmap?.CX||[]), ...(cmap?.MCW||[]), ...(cmap?.BAJI||[])])).sort();
+  const currList =
+    NETV2.segment === 'ALL' ? unionCurrencies :
+    NETV2.segment === 'MCW' ? (cmap?.MCW || []) :
+    NETV2.segment === 'BAJI' ? (cmap?.BAJI || []) : (cmap?.CX || []);
+
+  const el = document.getElementById('netv2-controls');
+  if (!el) return; el.style.display = 'block';
+  el.innerHTML = `
+    <div class="nnv2-row nnv2-seg" style="display:flex;gap:.5rem;align-items:center;margin:.4rem 0;"><strong>Section:</strong>
+      ${segList.map(s => `<button style="border:1px solid #ffd605;background:${(NETV2.segment===s || (s==='MCW'&&NETV2.segment==='MCX'))?'#10b981':'#ffd605'};color:${(NETV2.segment===s || (s==='MCW'&&NETV2.segment==='MCX'))?'#fff':'#1A2A44'};padding:.3rem .6rem;border-radius:8px;font-weight:800;cursor:pointer" data-seg="${s}">${s}</button>`).join(' ')}
+    </div>
+    <div class="nnv2-row nnv2-curr" style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;"><strong>Currencies:</strong>
+      ${['ALL', ...currList].map(c => `<span class="chip" data-d="${c}" style="display:inline-block;border:1px solid #cfd1d7;background:${NETV2.currency===c?'#26A69A':'#fff'};color:${NETV2.currency===c?'#fff':'#1A2A44'};padding:.25rem .55rem;border-radius:999px;font-weight:700;cursor:pointer">${c}</span>`).join(' ')}
+    </div>`;
+  el.querySelectorAll('.nnv2-seg button').forEach(btn => {
+    btn.onclick = async () => {
+      NETV2.segment = btn.dataset.seg; NETV2.currency = 'ALL';
+      await buildNetV2Controls(NETV2.header, NETV2.raw);
+      withPreservedScroll(() => applyNetV2Filter(true));
+      await ensureOverallLoaded(); renderNetV2Overall();
+    };
+  });
+  el.querySelectorAll('.nnv2-curr .chip').forEach(chip => {
+    chip.onclick = async () => {
+      const c = chip.dataset.d; NETV2.currency = (NETV2.currency === c && c !== 'ALL') ? 'ALL' : c;
+      await buildNetV2Controls(NETV2.header, NETV2.raw);
+      withPreservedScroll(() => applyNetV2Filter(false));
+      renderNetV2Overall();
+    };
+  });
+
+  document.getElementById('netv2-searchwrap').style.display = 'flex';
+  document.getElementById('table-tools').style.display = 'flex';
+  const searchInput = document.getElementById('netv2-search');
+  if (searchInput && !searchInput.__hooked) {
+    searchInput.__hooked = true;
+    searchInput.addEventListener('input', debounce(() => {
+      NETV2_SEARCH = searchInput.value || '';
+      withPreservedScroll(() => applyNetV2Filter(false));
+    }, 150));
+  }
+}
+function debounce(func, wait) {
+  let t; return function(...args){ clearTimeout(t); t=setTimeout(()=>func.apply(this,args), wait); };
+}
+function applyNetV2Filter(isInitial){
+  const callIdx = findCol(NETV2.header, ['Call','Section','Segment','Group']);
+  const currIdx = findCol(NETV2.header, ['Currency','Currencies']);
+  let rows = NETV2.raw.filter(r => segMatch(NETV2.segment, r?.[callIdx]));
+  if (NETV2.currency !== 'ALL' && currIdx >= 0) rows = rows.filter(r => String(r?.[currIdx] || '').trim() === NETV2.currency);
+  const hideIdx = new Set([callIdx, currIdx].filter(i => i >= 0));
+  let filteredHeader = NETV2.header.filter((_, i) => !hideIdx.has(i));
+  let filteredRows = rows.map(r => r.filter((_, i) => !hideIdx.has(i)));
+  filteredRows = applySearchRows(filteredRows, NETV2_SEARCH);
+  if (TABLE_SORT.col != null) filteredRows = sortRows(filteredRows, TABLE_SORT.col, TABLE_SORT.dir);
+  renderTable(filteredHeader, filteredRows, !!isInitial);
+}
+
+/* ======================== EVENTS ======================== */
+window.onclick = function(event) {
+  const modal = document.getElementById('imgModal');
+  const sidebar = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('toggle-nav');
+  if (event.target === modal) modal.style.display = 'none';
+  if (!sidebar.contains(event.target) && event.target !== toggleBtn && sidebar.classList.contains('active')) toggleSidebar();
+};
+document.getElementById('btnChartClose').addEventListener('click', () => {
+  document.getElementById('chartModal').classList.remove('show');
+  document.getElementById('chartBackdrop').classList.remove('show');
+});
+  </script>
 </body>
 </html>
