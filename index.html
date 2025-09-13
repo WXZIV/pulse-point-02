@@ -52,21 +52,24 @@
       height: calc(100dvh / var(--scale)); /* fills viewport after scaling */
       will-change: transform;
     }
-    /* iPhone-safe: while pinching, stop clicks inside iframe */
-    #app.pe-none { pointer-events: none !important; }
-
-    /* We keep the element for compatibility, but we won't toggle it anymore */
+    /* Transparent overlay that becomes touchable only during 2-finger gestures.
+       This makes pinch-zoom work even when starting over the table inside the iframe. */
     #gestureShield {
       position: fixed;
       inset: 0;
       z-index: 2147483647; /* above iframe */
       background: transparent;
-      pointer-events: none; /* always passthrough now */
+      pointer-events: none; /* clicks/taps pass through by default */
+      /* Tell the browser it's OK to pinch and pan here */
       touch-action: pinch-zoom pan-x pan-y;
+      -webkit-user-select: none;
+      user-select: none;
     }
-
     /* Optional tiny helper label (toggle to debug) */
     #hint { position: fixed; bottom: 8px; left: 8px; opacity: .35; font: 12px/1.2 system-ui, sans-serif; }
+
+    /* Small helper class: when active during pinch on iOS, iframe ignores taps */
+    #app.pe-none { pointer-events: none !important; }
   </style>
 </head>
 <body>
@@ -80,9 +83,11 @@
       title="Pulse Point App">
     </iframe>
   </div>
-  <!-- Present but inactive overlay -->
+
+  <!-- Overlay that activates only while pinching -->
   <div id="gestureShield" aria-hidden="true"></div>
   <!-- <div id="hint">1-finger: scroll & tap • 2-finger: pinch-zoom</div> -->
+
   <script>
     (function () {
       // 👉 Your Apps Script Web App URL
@@ -114,33 +119,94 @@
         }
       }
 
-      // iPhone-safe pinch: when 2+ fingers touch, disable iframe clicks.
-      // After pinch ends, wait a short cooldown so Safari's ghost-tap can't open links.
+      // --- iPhone-safe pinch zoom ---
+      // While 2+ fingers are down: make the iframe ignore taps (so the *page* zooms).
+      // After pinch ends: restore taps after a short cooldown to avoid ghost-clicks.
       function setupIOSPinchSafe() {
+        const ua = navigator.userAgent || "";
+        const isiOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (!isiOS) return;
+
         const iframe = document.getElementById('app');
-        let coolTimer = null;
+        const shield = document.getElementById('gestureShield');
+        let cooldown;
 
-        const releaseSoon = (ms) => {
-          clearTimeout(coolTimer);
-          coolTimer = setTimeout(() => iframe.classList.remove('pe-none'), ms);
-        };
+        function armPinchMode() {
+          // Let page capture pinch, and block accidental link taps inside iframe
+          shield.style.pointerEvents = 'auto';
+          iframe.classList.add('pe-none');
+        }
+        function disarmPinchMode(delayMs) {
+          clearTimeout(cooldown);
+          cooldown = setTimeout(() => {
+            shield.style.pointerEvents = 'none';
+            iframe.classList.remove('pe-none');
+          }, delayMs);
+        }
 
+        // Native Safari gesture events (preferred)
+        window.addEventListener('gesturestart', () => {
+          armPinchMode();
+        }, { passive: true });
+        window.addEventListener('gestureend', () => {
+          disarmPinchMode(250); // small delay prevents ghost-taps
+        }, { passive: true });
+
+        // Fallback: multi-touch detection (in case gesture* isn't fired)
         window.addEventListener('touchstart', (e) => {
-          if ((e.touches?.length || 0) >= 2) {
-            iframe.classList.add('pe-none');  // stop link taps inside iframe
-          }
-        }, { passive: true });
-
+          if ((e.touches?.length || 0) >= 2) armPinchMode();
+        }, { passive: true, capture: true });
         window.addEventListener('touchend', (e) => {
-          if ((e.touches?.length || 0) < 2) {
-            // small delay blocks Safari’s ghost click after a pinch
-            releaseSoon(300);
-          }
-        }, { passive: true });
-
+          if ((e.touches?.length || 0) < 2) disarmPinchMode(250);
+        }, { passive: true, capture: true });
         window.addEventListener('touchcancel', () => {
-          releaseSoon(0);
-        }, { passive: true });
+          disarmPinchMode(0);
+        }, { passive: true, capture: true });
+      }
+
+      // Keep Android/desktop behavior (optional; harmless for iOS after the fix above)
+      function setupGestureShield() {
+        const shield = document.getElementById('gestureShield');
+        let touchCount = 0;
+        let pointerTouchCount = 0;
+
+        // Touch Events
+        window.addEventListener('touchstart', (e) => {
+          touchCount = e.touches.length;
+          shield.style.pointerEvents = (touchCount >= 2) ? 'auto' : 'none';
+        }, { capture: true, passive: true });
+        window.addEventListener('touchmove', (e) => {
+          touchCount = e.touches.length;
+          shield.style.pointerEvents = (touchCount >= 2) ? 'auto' : 'none';
+        }, { capture: true, passive: true });
+        window.addEventListener('touchend', (e) => {
+          touchCount = e.touches.length;
+          if (touchCount < 2) shield.style.pointerEvents = 'none';
+        }, { capture: true, passive: true });
+        window.addEventListener('touchcancel', () => {
+          touchCount = 0;
+          shield.style.pointerEvents = 'none';
+        }, { capture: true, passive: true });
+
+        // Pointer Events (Android/Chrome)
+        window.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount++;
+            shield.style.pointerEvents = (pointerTouchCount >= 2) ? 'auto' : 'none';
+          }
+        }, { capture: true, passive: true });
+        window.addEventListener('pointerup', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount = Math.max(0, pointerTouchCount - 1);
+            if (pointerTouchCount < 2) shield.style.pointerEvents = 'none';
+          }
+        }, { capture: true, passive: true });
+        window.addEventListener('pointercancel', (e) => {
+          if (e.pointerType === 'touch') {
+            pointerTouchCount = 0;
+            shield.style.pointerEvents = 'none';
+          }
+        }, { capture: true, passive: true });
       }
 
       function init() {
@@ -152,8 +218,9 @@
         window.addEventListener('resize', fit, { passive: true });
         window.addEventListener('orientationchange', fit, { passive: true });
 
-        // Enable reliable pinch-zoom on iPhone (no overlay toggling = no crash)
-        setupIOSPinchSafe();
+        // Enable reliable pinch-zoom
+        setupIOSPinchSafe();   // iPhone-specific safety
+        setupGestureShield();  // general behavior (Android/desktop)
       }
 
       document.addEventListener('DOMContentLoaded', init, { passive: true });
